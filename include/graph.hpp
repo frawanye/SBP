@@ -54,6 +54,7 @@ public:
         this->sort_vertices();
     }
     Graph() = default;
+    virtual ~Graph() = default;
     /// Loads the graph. Assumes the file is saved in the following directory:
     /// <args.directory>/<args.type>/<args.overlap>Overlap_<args.blocksizevar>BlockSizeVar
     /// Assumes the graph file is named:

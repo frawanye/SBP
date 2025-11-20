@@ -54,6 +54,7 @@ add_library(SBPLIB STATIC
         src/top_down_sbp.cpp
         src/blockmodel/blockmodel.cpp
         src/blockmodel/blockmodel_triplet.cpp
+        src/blockmodel/sparse/dense_matrix.cpp
         src/blockmodel/sparse/dict_matrix.cpp
         src/blockmodel/sparse/dict_transpose_matrix.cpp
         src/distributed/dist_block_merge.cpp

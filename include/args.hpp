@@ -50,7 +50,7 @@ public:  // Everything in here is public, because why not?
     std::string subgraphpartition;
     std::string tag;
     int threads;
-    bool no_transpose;
+    std::string matrix_type;
     std::string type;
     bool undirected;
 
@@ -150,8 +150,8 @@ public:  // Everything in here is public, because why not?
                                               "string or param1=value1;param2=value2", parser);
             TCLAP::ValueArg<int> _threads("", "threads", "The number of OpenMP threads to use. If less than 1, will set "
                                           "number of threads to number of logical CPU cores", false, 1, "int", parser);
-            TCLAP::SwitchArg _notranspose("", "no_transpose", "If set, will NOT store the matrix no_transpose for faster column"
-                                        "indexing. Default = false", parser, false);
+            TCLAP::ValueArg<std::string> _matrix_type("", "matrix_type", "Matrix storage type for blockmodel",
+                                                      false, "sparse_transpose", "dense|sparse|sparse_transpose", parser);
             TCLAP::ValueArg<std::string> _type("t", "type", "The type of streaming/name of the graph", false, "static",
                                                "string", parser);
             TCLAP::SwitchArg _undirected("", "undirected", "If set, graph will be treated as undirected", parser,
@@ -198,7 +198,7 @@ public:  // Everything in here is public, because why not?
             this->subgraphpartition = _subgraphpartition.getValue();
             this->tag = _tag.getValue();
             this->threads = _threads.getValue();
-            this->no_transpose = _notranspose.getValue();
+            this->matrix_type = _matrix_type.getValue();
             this->type = _type.getValue();
             this->undirected = _undirected.getValue();
             if (this->nonparametric) {

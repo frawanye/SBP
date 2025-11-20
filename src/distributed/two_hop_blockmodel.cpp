@@ -107,7 +107,7 @@ void TwoHopBlockmodel::distribute_none_edge_balanced(const Graph &graph) {
             vertex_info[i] = std::make_pair(i, vertex_degrees[i]);
         }
 //	    std::vector<long> sorted_indices = utils::argsort<long>(vertex_degrees);
-        std::stable_sort(std::execution::par_unseq, vertex_info.begin(), vertex_info.end(),
+        std::stable_sort(vertex_info.begin(), vertex_info.end(),
                          [](const auto &i1, const auto &i2) {
             return i1.second > i2.second;
         });
@@ -319,9 +319,11 @@ void TwoHopBlockmodel::initialize_edge_counts(const Graph &graph) {
     this->_num_nonempty_blocks = 0;
     std::shared_ptr<ISparseMatrix> blockmatrix;
     long num_buckets = graph.num_edges() / graph.num_vertices();
-    if (args.no_transpose) {
+    if (args.matrix_type == "dense") {
+        blockmatrix = std::make_shared<DenseMatrix>(this->_num_blocks, this->_num_blocks);
+    } else if (args.matrix_type == "sparse") {
         blockmatrix = std::make_shared<DictMatrix>(this->_num_blocks, this->_num_blocks);
-    } else {
+    } else {  // sparse_transpose
         blockmatrix = std::make_shared<DictTransposeMatrix>(this->_num_blocks, this->_num_blocks, num_buckets);
     }
     // This may or may not be faster with push_backs. TODO: test init & fill vs push_back
@@ -367,7 +369,7 @@ void TwoHopBlockmodel::initialize_edge_counts(const Graph &graph) {
                     continue;
                 }
                 long weight = 1;
-                if (!args.no_transpose) {
+                if (args.matrix_type == "sparse_transpose") {
                     std::shared_ptr<DictTransposeMatrix> blockmatrix_dtm =
                             std::dynamic_pointer_cast<DictTransposeMatrix>(blockmatrix);
                     blockmatrix_dtm->add_transpose(neighbor_block, block, weight);
@@ -473,7 +475,7 @@ std::vector<std::pair<long,long>> TwoHopBlockmodel::sorted_block_sizes() const {
         block_sizes[block].second++;
     }
 //    utils::radix_sort(block_sizes);
-    std::stable_sort(std::execution::par_unseq, block_sizes.begin(), block_sizes.end(), [](const auto &i1, const auto &i2) {
+    std::stable_sort(block_sizes.begin(), block_sizes.end(), [](const auto &i1, const auto &i2) {
         return i1.second > i2.second;
     });
     return block_sizes;

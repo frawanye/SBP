@@ -17,6 +17,7 @@
 #include "delta.hpp"
 #include "globals.hpp"
 #include "graph.hpp"
+#include "sparse/dense_matrix.hpp"
 #include "sparse/dict_matrix.hpp"
 #include "sparse/dict_transpose_matrix.hpp"
 #include "typedefs.hpp"
@@ -57,9 +58,11 @@ class Blockmodel {
         this->block_reduction_rate = block_reduction_rate;
         this->overall_entropy = std::numeric_limits<double>::max();
         this->_num_nonempty_blocks = num_blocks;
-        if (args.no_transpose) {
+        if (args.matrix_type == "dense") {
+            this->_blockmatrix = std::make_shared<DenseMatrix>(this->_num_blocks, this->_num_blocks);
+        } else if (args.matrix_type == "sparse") {
             this->_blockmatrix = std::make_shared<DictMatrix>(this->_num_blocks, this->_num_blocks);
-        } else {
+        } else {  // sparse_transpose
             this->_blockmatrix = std::make_shared<DictTransposeMatrix>(this->_num_blocks, this->_num_blocks, 36);
         }
         // Set the block assignment to be the range [0, this->_num_blocks)

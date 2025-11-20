@@ -9,7 +9,7 @@
 class BlockmodelTest : public ToyExample {
 protected:
     void SetUp() override {
-        args.no_transpose = false;
+        args.matrix_type = "sparse_transpose";
         ToyExample::SetUp();
     }
 };
@@ -17,7 +17,7 @@ protected:
 class BlockmodelComplexTest : public ComplexExample {
 protected:
     void SetUp() override {
-        args.no_transpose = false;
+        args.matrix_type = "sparse_transpose";
         ComplexExample::SetUp();
     }
 };

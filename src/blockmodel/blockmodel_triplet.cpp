@@ -166,7 +166,7 @@ void TopDownBlockmodelTriplet::update(Blockmodel &blockmodel) {
         index = 1;
         std::cout << "placing new blockmodel in the middle (index 1)" << std::endl;
     } else {
-        if ((blockmodel.getOverall_entropy() <= this->blockmodels[1].getOverall_entropy()) &
+        if ((blockmodel.getOverall_entropy() <= this->blockmodels[1].getOverall_entropy()) &&
            (abs(blockmodel.num_blocks() - this->get(1).num_blocks()) > 0.1 * this->get(1).num_blocks())) {
 	    long old_index;
             if (this->get(1).num_blocks() < blockmodel.num_blocks()) {

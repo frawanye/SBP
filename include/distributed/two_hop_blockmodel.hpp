@@ -17,6 +17,7 @@
 #include "blockmodel.hpp"
 #include "../graph.hpp"
 #include "mpi_data.hpp"
+#include "sparse/dense_matrix.hpp"
 #include "sparse/dict_matrix.hpp"
 #include "sparse/dict_transpose_matrix.hpp"
 #include "typedefs.hpp"
