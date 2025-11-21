@@ -138,7 +138,7 @@ Blockmodel &finetune_assignment(TwoHopBlockmodel &blockmodel, Graph &graph) {
         std::cout << "Fine-tuning partition results after sample results have been extended to full graph" << std::endl;
     std::vector<double> delta_entropies;
     long total_vertex_moves = 0;
-    double old_entropy = args.nonparametric ?
+    double old_entropy = !args.parametric ?
                   entropy::nonparametric::mdl(blockmodel, graph) :
                   entropy::dist::mdl(blockmodel, graph.num_vertices(), graph.num_edges());
     blockmodel.setOverall_entropy(old_entropy);
@@ -160,7 +160,7 @@ Blockmodel &finetune_assignment(TwoHopBlockmodel &blockmodel, Graph &graph) {
             vertex_moves += update_blockmodel(graph, blockmodel, membership_updates, &next_assignment, mcmc_window);
         }
         MCMC_RUNTIMES.push_back(MPI_Wtime() - start_t);
-        double new_entropy = args.nonparametric ?
+        double new_entropy = !args.parametric ?
                              entropy::nonparametric::mdl(blockmodel, graph) :
                              entropy::dist::mdl(blockmodel, graph.num_vertices(), graph.num_edges());
         double delta_entropy = new_entropy - old_entropy;
@@ -238,7 +238,7 @@ TwoHopBlockmodel &mcmc(Graph &graph, TwoHopBlockmodel &blockmodel, bool golden_r
     }
     std::vector<double> delta_entropies;
 //    size_t total_vertex_moves = 0;
-    double old_entropy = args.nonparametric ?
+    double old_entropy = !args.parametric ?
                          entropy::nonparametric::mdl(blockmodel, graph) :
                          entropy::dist::mdl(blockmodel, graph.num_vertices(), graph.num_edges());
     blockmodel.setOverall_entropy(old_entropy);
@@ -285,7 +285,7 @@ TwoHopBlockmodel &mcmc(Graph &graph, TwoHopBlockmodel &blockmodel, bool golden_r
             }
         }
         MCMC_RUNTIMES.push_back(MPI_Wtime() - start_t);
-        new_entropy = args.nonparametric ?
+        new_entropy = !args.parametric ?
                       entropy::nonparametric::mdl(blockmodel, graph) :
                       entropy::dist::mdl(blockmodel, graph.num_vertices(), graph.num_edges());
         double delta_entropy = new_entropy - old_entropy;

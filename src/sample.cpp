@@ -275,7 +275,7 @@ Sample snowball(const Graph &graph, int subgraph_index, int num_subgraphs) {
         // I think the problem here is that the starting vertices aren't the same between ranks. Should broadcast the top n
         // vertices out to every rank, or have one rank do the sampling for all ranks and then broadcast results
 	// std::nth_element(std::execution::par_unseq, indices.data(), indices.data() + num_subgraphs,
-	std::stable_sort(std::execution::par_unseq, indices.data(),
+	std::stable_sort(indices.data(),
                          indices.data() + indices.size(), [&vertex_degrees](size_t i1, size_t i2) {
                     return vertex_degrees[i1] > vertex_degrees[i2];
                 });

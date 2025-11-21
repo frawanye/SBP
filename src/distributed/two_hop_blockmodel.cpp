@@ -107,7 +107,7 @@ void TwoHopBlockmodel::distribute_none_edge_balanced(const Graph &graph) {
             vertex_info[i] = std::make_pair(i, vertex_degrees[i]);
         }
 //	    std::vector<long> sorted_indices = utils::argsort<long>(vertex_degrees);
-        std::stable_sort(std::execution::par_unseq, vertex_info.begin(), vertex_info.end(),
+        std::stable_sort(vertex_info.begin(), vertex_info.end(),
                          [](const auto &i1, const auto &i2) {
             return i1.second > i2.second;
         });
@@ -473,7 +473,7 @@ std::vector<std::pair<long,long>> TwoHopBlockmodel::sorted_block_sizes() const {
         block_sizes[block].second++;
     }
 //    utils::radix_sort(block_sizes);
-    std::stable_sort(std::execution::par_unseq, block_sizes.begin(), block_sizes.end(), [](const auto &i1, const auto &i2) {
+    std::stable_sort(block_sizes.begin(), block_sizes.end(), [](const auto &i1, const auto &i2) {
         return i1.second > i2.second;
     });
     return block_sizes;
