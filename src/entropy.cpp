@@ -405,7 +405,7 @@ double delta_mdl(const Blockmodel &blockmodel, const Delta &delta, const utils::
 double hastings_correction(const Blockmodel &blockmodel, EdgeWeights &out_blocks, EdgeWeights &in_blocks,
                            utils::ProposalAndEdgeCounts &proposal, EdgeCountUpdates &updates,
                            common::NewBlockDegrees &new_block_degrees) {
-    if (proposal.num_neighbor_edges == 0 || args.greedy) {
+    if (proposal.num_neighbor_edges == 0 || !args.hastings_correction) {
         return 1.0;
     }
     // Compute block weights
@@ -451,7 +451,7 @@ double hastings_correction(const Blockmodel &blockmodel, EdgeWeights &out_blocks
 double hastings_correction(const Blockmodel &blockmodel, EdgeWeights &out_blocks, EdgeWeights &in_blocks,
                            utils::ProposalAndEdgeCounts &proposal, SparseEdgeCountUpdates &updates,
                            common::NewBlockDegrees &new_block_degrees) {
-    if (proposal.num_neighbor_edges == 0 || args.greedy) {
+    if (proposal.num_neighbor_edges == 0 || !args.hastings_correction) {
         return 1.0;
     }
     // Compute block weights
@@ -496,7 +496,7 @@ double hastings_correction(const Blockmodel &blockmodel, EdgeWeights &out_blocks
 
 double hastings_correction(long vertex, const Graph &graph, const Blockmodel &blockmodel, const Delta &delta,
                            long current_block, const utils::ProposalAndEdgeCounts &proposal) {
-    if (proposal.num_neighbor_edges == 0 || args.greedy || args.nonparametric) {  // No correction needed with greedy proposals
+    if (proposal.num_neighbor_edges == 0 || !args.hastings_correction || !args.parametric) {  // No correction if disabled or in nonparametric mode
         return 1.0;
     }
     // Compute block weights
@@ -569,7 +569,7 @@ double normalize_mdl_v1(double mdl, const Graph &graph) {
 //}
 
 double null_mdl_v1(const Graph &graph) {
-    if (args.nonparametric) {
+    if (!args.parametric) {
 //        std::cout << "why is this running nonparametric?" << std::endl;
         std::vector<long> assignment = utils::constant<long>(graph.num_vertices(), 0);
         Blockmodel null_model(1, graph, 0.5, assignment);
@@ -595,7 +595,7 @@ double null_mdl_v1(const Graph &graph) {
 } */
 
 double mdl(const Blockmodel &blockmodel, const Graph &graph) {
-    if (args.nonparametric)
+    if (!args.parametric)
         return nonparametric::mdl(blockmodel, graph);
     double log_posterior_p = blockmodel.log_posterior_probability();
     double x = pow(blockmodel.num_blocks(), 2) / graph.num_edges();

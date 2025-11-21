@@ -574,7 +574,7 @@ std::pair<long, long> split_init_random(const Graph &subgraph) {
 
 std::pair<long, long> split_init_degree_weighted(const Graph &subgraph, const std::vector<long> &vertex_degrees) {
     std::vector<int> indices = utils::range<int>(0, subgraph.num_vertices());
-    std::nth_element(std::execution::par_unseq, indices.data(), indices.data() + (subgraph.num_vertices() / 10),
+    std::nth_element(indices.data(), indices.data() + (subgraph.num_vertices() / 10),
                      indices.data() + indices.size(), [&vertex_degrees](size_t i1, size_t i2) {
                 return vertex_degrees[i1] > vertex_degrees[i2];
             });
@@ -591,7 +591,7 @@ std::pair<long, long> split_init_degree_weighted(const Graph &subgraph, const st
 
 std::pair<long, long> split_init_high_degree(const Graph &subgraph, const std::vector<long> &vertex_degrees) {
     std::vector<int> indices = utils::range<int>(0, subgraph.num_vertices());
-    std::nth_element(std::execution::par_unseq, indices.data(), indices.data() + 3,
+    std::nth_element(indices.data(), indices.data() + 3,
                      indices.data() + indices.size(), [&vertex_degrees](size_t i1, size_t i2) {
                 return vertex_degrees[i1] > vertex_degrees[i2];
             });

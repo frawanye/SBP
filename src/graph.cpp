@@ -1,6 +1,6 @@
 #include "graph.hpp"
 
-#include <execution>
+// #include <execution>  // TBB dependency removed
 #include "mpi.h"
 
 #include "globals.hpp"
@@ -233,16 +233,18 @@ void Graph::parse_undirected(NeighborList &in_neighbors, NeighborList &out_neigh
 }
 
 void Graph::sort_vertices() {
-    if (args.degreeproductsort) {
+    if (!args.vertex_degree_sort) {
+        // Default: use edge degree product for more accurate high-influence vertex identification
         this->degree_product_sort();
         return;
     }
+    // Alternative: use vertex degree (faster but less accurate)
 //    std::cout << "Starting to sort vertices" << std::endl;
 //    double start_t = MPI_Wtime();
     std::vector<long> vertex_degrees = this->degrees();
     std::vector<int> indices = utils::range<int>(0, this->_num_vertices);
     // std::nth_element(std::execution::par_unseq, indices.data(), indices.data() + int(args.mh_percent * this->_num_vertices),
-    std::stable_sort(std::execution::par_unseq, indices.data(),
+    std::stable_sort(indices.data(),
               indices.data() + indices.size(), [&vertex_degrees](size_t i1, size_t i2) {
               return vertex_degrees[i1] > vertex_degrees[i2];
     });
@@ -309,7 +311,7 @@ std::vector<std::pair<std::pair<long, long>, long>> Graph::sorted_edge_list() co
             edge_info.emplace_back(std::make_pair(source, dest), information);
         }
     }
-    std::stable_sort(std::execution::par_unseq, edge_info.begin(), edge_info.end(), [](const auto &i1, const auto &i2) {
+    std::stable_sort(edge_info.begin(), edge_info.end(), [](const auto &i1, const auto &i2) {
         return i1.second > i2.second;
     });
     return edge_info;

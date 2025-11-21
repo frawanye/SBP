@@ -8,7 +8,7 @@
 #include <fstream>
 #include <iostream>
 #include <cmath>
-#include <execution>
+// #include <execution>  // TBB dependency removed
 #include <mpi.h>
 #include <numeric>
 #include <sstream>
@@ -166,7 +166,7 @@ template <typename T> inline std::vector<long> argsort(const std::vector<T> &uns
     // initialize original index locations
     std::vector<long> indices = utils::range<long>(0, unsorted.size());
     // sort indexes based on comparing values in unsorted
-    std::stable_sort(std::execution::par_unseq, indices.data(), indices.data() + indices.size(),
+    std::stable_sort(indices.data(), indices.data() + indices.size(),
                      [&unsorted](size_t i1, size_t i2) { return unsorted[i1] > unsorted[i2]; });
     return indices;
 }
