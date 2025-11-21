@@ -144,3 +144,7 @@ main
 *.xlsx
 *.png
 profiling/
+.cursorrules
+tmp
+*.err
+*.sh
