@@ -285,7 +285,7 @@ If you use this code, please cite our relevant papers:
 
 © Virginia Polytechnic Institute and State University, 2023.
 
-Licensed under the GNU Lesser General Public License v2.1. See the [LICENSE](LICENSE) file for details.
+Licensed under the MIT License. See the [LICENSE](LICENSE) file for details. Original fork's license may be updated to LGPL v2.1 in the future.
 
 ## Acknowledgments
 
