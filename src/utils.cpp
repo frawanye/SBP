@@ -262,9 +262,9 @@ void write_json(const std::vector<long> &block_assignment, double description_le
     output["Filepath"] = args.filepath;
     output["Tag"] = args.tag;
     output["Algorithm"] = args.algorithm;
-    output["Degree Product Sort"] = args.degreeproductsort;
+    output["Vertex Sort Method"] = args.vertex_degree_sort ? "Vertex Degree" : "Edge Degree Product";
     output["Data Distribution"] = args.distribute;
-    output["Greedy"] = args.greedy;
+    output["Hastings Correction"] = args.hastings_correction;
     output["Metropolis-Hastings Ratio"] = args.mh_percent;
     output["Overlap"] = args.overlap;
     output["Block Size Variation"] = args.blocksizevar;

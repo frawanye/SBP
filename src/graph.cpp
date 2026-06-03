@@ -232,10 +232,12 @@ void Graph::parse_undirected(NeighborList &in_neighbors, NeighborList &out_neigh
 }
 
 void Graph::sort_vertices() {
-    if (args.degreeproductsort) {
+    if (!args.vertex_degree_sort) {
+        // Default: use edge degree product for more accurate high-influence vertex identification
         this->degree_product_sort();
         return;
     }
+    // Alternative: use vertex degree (faster but less accurate)
 //    std::cout << "Starting to sort vertices" << std::endl;
 //    double start_t = MPI_Wtime();
     std::vector<long> vertex_degrees = this->degrees();

@@ -190,7 +190,7 @@ TEST_F(NonparametricEntropyTest, SpecialCaseShouldGiveCorrectDeltaMDL) {
     utils::print<long>(B4.block_assignment());
     Blockmodel B5 = B3.copy();
     std::cout << "before move_vertex" << std::endl;
-    args.nonparametric = true;
+    args.parametric = false;  // Use nonparametric mode
     VertexMove result = finetune::move_vertex(6, 3, proposal, B4, graph, out_edges, in_edges);
     std::cout << "============ B5.move_vertex()" << std::endl;
     B5.move_vertex(V6, deltas, proposal);
@@ -210,7 +210,7 @@ TEST_F(NonparametricEntropyTest, SpecialCaseShouldGiveCorrectDeltaMDL) {
 //    std::cout << "======== After move =======" << std::endl;
 //    B5.print_blockmodel();
     EXPECT_FLOAT_EQ(dE, result.delta_entropy);
-    args.nonparametric = false;
+    args.parametric = true;  // Use parametric mode
 }
 
 //TEST_F(NonparametricEntropyTest, NullModelMDLv1ShouldGiveCorrectMDLForSmallGraph) {

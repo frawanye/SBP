@@ -486,7 +486,7 @@ Blockmodel run(const Graph &graph) {
 }
 
 Blockmodel split_communities(Blockmodel &blockmodel, const Graph &graph, int target_num_communities) {
-    std::string user_matrix_type = args.matrix_type;
+    bool user_arg = args.no_transpose;
     int num_blocks = blockmodel.num_blocks();
     std::vector<Split> best_split_for_each_block(num_blocks);
     std::vector<double> delta_entropy_for_each_block =
@@ -495,7 +495,7 @@ Blockmodel split_communities(Blockmodel &blockmodel, const Graph &graph, int tar
     for (int i = 0; i < num_blocks; ++i) {
         omp_init_lock(&locks[i]);
     }
-    args.matrix_type = "sparse";
+    args.no_transpose = true;
     double loop_start_t = MPI_Wtime();
     std::vector<Graph> subgraphs(blockmodel.num_blocks());
     std::vector<MapVector<long>> translators(blockmodel.num_blocks());
@@ -533,7 +533,7 @@ Blockmodel split_communities(Blockmodel &blockmodel, const Graph &graph, int tar
         }
     }
     timers::BlockSplit_loop_time += MPI_Wtime() - loop_start_t;
-    args.matrix_type = user_matrix_type;
+    args.no_transpose = user_arg;
     for (int i = 0; i < num_blocks; ++i) {
         omp_destroy_lock(&locks[i]);
     }

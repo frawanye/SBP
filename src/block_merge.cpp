@@ -72,7 +72,7 @@ void carry_out_best_merges_advanced(Blockmodel &blockmodel, const std::vector<do
 //            long proposed_block_self_edges = blockmodel.blockmatrix()->get(merge_to, merge_to)
 //                                            + delta.get(merge_to, merge_to);
 //            double delta_entropy_actual = entropy::block_merge_delta_mdl(merge_from, proposal, blockmodel, delta);
-            double delta_entropy_actual = args.nonparametric ?
+            double delta_entropy_actual = !args.parametric ?
                                           entropy::nonparametric::block_merge_delta_mdl(blockmodel, proposal, graph, delta) :
                                           entropy::block_merge_delta_mdl(merge_from, proposal, blockmodel, delta);
             // If the actual change in entropy is more positive (greater) than anticipated, put it back in queue
@@ -258,7 +258,7 @@ ProposalEvaluation propose_merge_sparse(long current_block, const Blockmodel &bl
         return ProposalEvaluation{proposal.proposal, std::numeric_limits<double>::max()};
     Delta delta = blockmodel_delta(current_block, proposal.proposal, blockmodel);
     //==========NEW==============
-    double delta_entropy = args.nonparametric ?
+    double delta_entropy = !args.parametric ?
             entropy::nonparametric::block_merge_delta_mdl(blockmodel, proposal, graph, delta) :
             entropy::block_merge_delta_mdl(current_block, proposal, blockmodel, delta);
     //==========OLD==============

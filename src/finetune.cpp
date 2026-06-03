@@ -20,7 +20,7 @@ long num_surrounded = 0;
 //std::ofstream my_file;
 
 bool accept(double delta_entropy, double hastings_correction) {
-    if (args.greedy) {
+    if (!args.hastings_correction) {
         return delta_entropy < 0.0;
     }
     std::uniform_real_distribution<double> distribution(0.0, 1.0);
@@ -436,7 +436,7 @@ VertexMove eval_vertex_move(long vertex, long current_block, utils::ProposalAndE
 //        return eval_vertex_move_nodelta(vertex, current_block, proposal, blockmodel, graph, out_edges, in_edges);
     const Delta delta = blockmodel_delta(vertex, current_block, proposal.proposal, out_edges, in_edges, blockmodel);
     double hastings = entropy::hastings_correction(vertex, graph, blockmodel, delta, current_block, proposal);
-    double delta_entropy = args.nonparametric ?
+    double delta_entropy = !args.parametric ?
             entropy::nonparametric::delta_mdl(blockmodel, graph, vertex, delta, proposal) :
             entropy::delta_mdl(blockmodel, delta, proposal);
     if (accept(delta_entropy, hastings))
@@ -451,7 +451,7 @@ VertexMove_v3 eval_vertex_move_v3(long vertex, long current_block, utils::Propos
     Vertex v = { vertex, long(graph.out_neighbors(vertex).size()), long(graph.in_neighbors(vertex).size()) };
     const Delta delta = blockmodel_delta(vertex, current_block, proposal.proposal, out_edges, in_edges, blockmodel);
     double hastings = entropy::hastings_correction(vertex, graph, blockmodel, delta, current_block, proposal);
-    double delta_entropy = args.nonparametric ?
+    double delta_entropy = !args.parametric ?
                            entropy::nonparametric::delta_mdl(blockmodel, graph, vertex, delta, proposal) :
                            entropy::delta_mdl(blockmodel, delta, proposal);
     if (accept(delta_entropy, hastings))
@@ -826,7 +826,7 @@ VertexMove move_vertex(long vertex, long current_block, utils::ProposalAndEdgeCo
     Delta delta = blockmodel_delta(vertex, current_block, proposal.proposal, out_edges, in_edges,
                                    blockmodel);
     double hastings = entropy::hastings_correction(vertex, graph, blockmodel, delta, current_block, proposal);
-    double delta_entropy = args.nonparametric ?
+    double delta_entropy = !args.parametric ?
                            entropy::nonparametric::delta_mdl(blockmodel, graph, vertex, delta, proposal) :
                            entropy::delta_mdl(blockmodel, delta, proposal);
 //    double delta_entropy = entropy::delta_mdl(blockmodel, delta, proposal);

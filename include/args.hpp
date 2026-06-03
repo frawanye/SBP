@@ -22,14 +22,14 @@ public:  // Everything in here is public, because why not?
     size_t cachesize;
     std::string csv;  // TODO: get rid of this - results now saved to json
     bool degreecorrected;
-    bool degreeproductsort;
+    bool vertex_degree_sort;
     std::string delimiter;
     bool detach;
     std::string distribute;
     std::string directory;
     bool evaluate;
     std::string filepath;
-    bool greedy;
+    bool hastings_correction;
     std::string json;
     float mh_percent;
     bool mix;
@@ -37,7 +37,7 @@ public:  // Everything in here is public, because why not?
     bool nodelta;  // TODO: if delta is much faster, get rid of this and associated methods.
     bool noduplicates;
     bool nonblocking;
-    bool nonparametric;
+    bool parametric;
     int numvertices;
     bool ordered;
     std::string output_file;
@@ -74,11 +74,11 @@ public:  // Everything in here is public, because why not?
                                                    std::numeric_limits<int>::max(), "[1, infinity]", parser);
             TCLAP::ValueArg<int> _batches("", "batches", "The number of batches to use for the asynchronous_gibbs "
                                           "algorithm. Too many batches will lead to many updates and little parallelism,"
-                                          " but too few will lead to poor results or more iterations", false, 1, "int",
+                                          " but too few will lead to poor results or more iterations", false, 2, "int",
                                           parser);
             TCLAP::ValueArg<std::string> _blocksizevar("b", "blocksizevar", "The variation between the sizes of "
                                                        "communities", false, "low", "low|high|unk", parser);
-            TCLAP::ValueArg<size_t> _cachesize("", "cachesize", "The size of the log cache", false, 100, ">= 1", parser);
+            TCLAP::ValueArg<size_t> _cachesize("", "cachesize", "The size of the log cache", false, 20000, ">= 1", parser);
             TCLAP::ValueArg<std::string> _csv("c", "csv",
                                               "The path to the csv file in which the results will be stored, "
                                               "without the suffix, e.g.:\n"
@@ -86,8 +86,8 @@ public:  // Everything in here is public, because why not?
                                               false, "./eval/test", "path", parser);
             TCLAP::SwitchArg _degreecorrected("", "degreecorrected", "If set, will compute the degree-corrected description length.",
                                               parser, false);
-            TCLAP::SwitchArg _degreeproductsort("", "degreeproductsort", "If set, will use edge degree products to split vertices "
-                                                "into high and low influence sets.", parser, false);
+            TCLAP::SwitchArg _vertex_degree_sort("", "vertex-degree-sort", "If set, will use vertex degree instead of edge degree product "
+                                                "to identify high-influence vertices (less accurate but faster).", parser, false);
             TCLAP::ValueArg<std::string> _delimiter("", "delimiter", "The delimiter used in the file storing the graph",
                                                     false, "\t", "string, usually `\\t` or `,`", parser);
             TCLAP::SwitchArg _detach("", "detach", "If set, will detach 1-degree vertices before running"
@@ -108,12 +108,12 @@ public:  // Everything in here is public, because why not?
                                        parser, false);
             TCLAP::ValueArg<std::string> _filepath("f", "filepath", "The filepath for the graph, minus the extension.",
                                                    true, "./data/default_graph", "path", parser);
-            TCLAP::SwitchArg _greedy("", "greedy", "If set, will *not* use a greedy approach; hastings correction will not be computed",
-                                     parser, true);
+            TCLAP::SwitchArg _hastings_correction("", "hastings-correction", "If set, will compute Hastings correction for more accurate MCMC (slower, only useful in parametric mode)",
+                                     parser, false);
             TCLAP::ValueArg<std::string> _json("j", "json", "The path to the directory containing json output",
                                                false, "output", "path", parser);
             TCLAP::ValueArg<float> _mh_percent("m", "mh_percent", "The percentage of vertices to process sequentially if alg==hybrid_mcmc",
-                                               false, 0.075, "float", parser);
+                                               false, 0.1, "float", parser);
             TCLAP::SwitchArg _mix("", "mix", "If set, will run block merges after golden ratio is found", parser, false);
             TCLAP::SwitchArg _modularity("", "modularity", "If set, will compute modularity at the end of execution.",
                                          parser, false);
@@ -123,7 +123,7 @@ public:  // Everything in here is public, because why not?
                                            "and ensure that they're not inserted twice. Otherwise, the graph needs to "
                                            "be manually checked to ensure that it's not a multigraph.", parser, false);
             TCLAP::SwitchArg _nonblocking("", "nonblocking", "If set, will use MPI nonblocking single-sided communication in the MCMC phase.", parser, false);
-            TCLAP::SwitchArg _nonparametric("", "nonparametric", "If set, will use the nonparametric blockmodel entropy computations.",
+            TCLAP::SwitchArg _parametric("", "parametric", "If set, will use the parametric blockmodel entropy computations instead of nonparametric (disables default behavior).",
                                             parser, false);
             TCLAP::ValueArg<int> _numvertices("n", "numvertices", "The number of vertices in the graph", false, 1000,
                                               "int", parser);
@@ -136,8 +136,8 @@ public:  // Everything in here is public, because why not?
                                                false, 1.0, "0 < x <= 1.0", parser);
             TCLAP::ValueArg<std::string> _samplingalg("", "samplingalg", "The sampling algorithm to use, if --samplesize < 1.0",
                                                       false, "random", "random|max_degree|expansion_snowball", parser);
-            TCLAP::ValueArg<std::string> _split("", "split", "The type of split to use in TopDownSBP", false, "random",
-                                                "random|snowball|single-snowball", parser);
+            TCLAP::ValueArg<std::string> _split("", "split", "The type of split to use in TopDownSBP", false, "connectivity-snowball",
+                                                "random|snowball|single-snowball|connectivity-snowball", parser);
             TCLAP::ValueArg<std::string> _splitinit("", "splitinit", "The type of split initialization to use", false, "random",
                                                     "random|degree-weighted|high-degree", parser);
             TCLAP::ValueArg<int> _subgraphs("", "subgraphs", "If running divide and conquer SBP, the number of subgraphs"
@@ -165,14 +165,14 @@ public:  // Everything in here is public, because why not?
             this->cachesize = _cachesize.getValue();
             this->csv = _csv.getValue();
             this->degreecorrected = _degreecorrected.getValue();
-            this->degreeproductsort = _degreeproductsort.getValue();
+            this->vertex_degree_sort = _vertex_degree_sort.getValue();
             this->delimiter = _delimiter.getValue();
             this->detach = _detach.getValue();
             this->distribute = _distribute.getValue();
             this->directory = _directory.getValue();
             this->evaluate = _evaluate.getValue();
             this->filepath = _filepath.getValue();
-            this->greedy = _greedy.getValue();
+            this->hastings_correction = _hastings_correction.getValue();
             this->json = _json.getValue();
             this->mh_percent = _mh_percent.getValue();
             this->mix = _mix.getValue();
@@ -180,7 +180,7 @@ public:  // Everything in here is public, because why not?
             this->nodelta = _nodelta.getValue();
             this->noduplicates = _noduplicates.getValue();
             this->nonblocking = _nonblocking.getValue();
-            this->nonparametric = _nonparametric.getValue();
+            this->parametric = _parametric.getValue();
             this->numvertices = _numvertices.getValue();
             this->ordered = _ordered.getValue();
             this->output_file = _output_file.getValue();
@@ -201,9 +201,9 @@ public:  // Everything in here is public, because why not?
             this->matrix_type = _matrix_type.getValue();
             this->type = _type.getValue();
             this->undirected = _undirected.getValue();
-            if (this->nonparametric) {
-                std::cout << "NOTE: using nonparametric entropy, setting greedy to false" << std::endl;
-                this->greedy = false;
+            if (!this->parametric) {
+                std::cout << "NOTE: using nonparametric entropy, Hastings correction disabled (greedy mode)" << std::endl;
+                this->hastings_correction = false;
             }
         } catch (TCLAP::ArgException &exception) {
             std::cerr << "ERROR " << "ERROR: " << exception.error() << " for argument " << exception.argId() << std::endl;
