@@ -91,14 +91,16 @@ MapVector<long> DenseMatrix::getcol_sparse(long col) const {
 
 const MapVector<long>& DenseMatrix::getcol_sparseref(long col) const {
     check_col_bounds(col);
-    temp_sparse_vector.clear();
+    MapVector<long> &slot = temp_sparse_vectors[temp_vector_idx % SPARSEREF_SLOTS];
+    ++temp_vector_idx;
+    slot.clear();
     for (long row = 0; row < this->nrows; ++row) {
         long value = this->matrix[row][col];
         if (value != 0) {
-            temp_sparse_vector[row] = value;
+            slot[row] = value;
         }
     }
-    return temp_sparse_vector;
+    return slot;
 }
 
 void DenseMatrix::getcol_sparse(long col, MapVector<long> &col_vector) const {
@@ -142,14 +144,16 @@ void DenseMatrix::getrow_sparse(long row, MapVector<long> &row_vector) const {
 
 const MapVector<long>& DenseMatrix::getrow_sparseref(long row) const {
     check_row_bounds(row);
-    temp_sparse_vector.clear();
+    MapVector<long> &slot = temp_sparse_vectors[temp_vector_idx % SPARSEREF_SLOTS];
+    ++temp_vector_idx;
+    slot.clear();
     for (long col = 0; col < this->ncols; ++col) {
         long value = this->matrix[row][col];
         if (value != 0) {
-            temp_sparse_vector[col] = value;
+            slot[col] = value;
         }
     }
-    return temp_sparse_vector;
+    return slot;
 }
 
 EdgeWeights DenseMatrix::incoming_edges(long block) const {

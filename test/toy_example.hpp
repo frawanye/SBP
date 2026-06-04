@@ -31,6 +31,9 @@ protected:
     VertexMove_v3 Move;
     VertexMove_v3 SelfEdgeMove;
     Vertex V5, V6, V7;
+    // When non-empty, overrides the transpose-based matrix_type selection.
+    // Set this in a derived fixture's SetUp() before calling the base SetUp().
+    std::string forced_matrix_type = "";
 
     void SetUp() override {
         ToySetUp(false);
@@ -41,7 +44,9 @@ protected:
         rng::init_generators();
         // TODO: refactor code-base so nonparametric is the default, and the current default functions are renamed to parametric_*
         args.parametric = true;
-        args.matrix_type = transpose ? "sparse" : "sparse_transpose";
+        args.matrix_type = !forced_matrix_type.empty()
+                           ? forced_matrix_type
+                           : (transpose ? "sparse" : "sparse_transpose");
         std::vector<std::vector<long>> edges {
                 {0, 0},
                 {0, 1},
@@ -139,6 +144,7 @@ protected:
 };
 
 class BlockMergeTest : public ToyExample {
+protected:
     void SetUp() override {
         ToyExample::SetUp();
         ToySetUp(true);
@@ -178,7 +184,9 @@ protected:
     }
 
     void ComplexToySetUp(bool transpose) {
-        args.matrix_type = transpose ? "sparse" : "sparse_transpose";
+        args.matrix_type = !forced_matrix_type.empty()
+                           ? forced_matrix_type
+                           : (transpose ? "sparse" : "sparse_transpose");
         Proposal = { 0, 1, 2, 3 };
         assignment = { 0, 0, 0, 1, 2, 3, 3, 4, 5, 1, 5 };
         B = Blockmodel(6, graph, 0.5, assignment);

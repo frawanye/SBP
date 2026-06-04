@@ -109,6 +109,7 @@ add_executable(Test
         test/blockmodel_test.cpp
         test/block_merge_test.cpp
         test/common_test.cpp
+        test/dense_matrix_test.cpp
         test/dict_matrix_test.cpp
         test/dict_transpose_matrix_test.cpp
         test/entropy_test.cpp

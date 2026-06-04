@@ -47,6 +47,25 @@ protected:
 
 class NonparametricBlockMergeEntropyTest : public BlockMergeTest {};
 
+class NonparametricEntropyDenseTest : public ToyExample {
+protected:
+    Blockmodel B3;
+
+    void SetUp() override {
+        forced_matrix_type = "dense";
+        ToyExample::SetUp();
+        std::vector<long> assignment3 = {0, 0, 0, 1, 2, 3, 3, 4, 5, 1, 5};
+        B3 = Blockmodel(6, graph, 0.5, assignment3);
+    }
+};
+
+class NonparametricBlockMergeEntropyDenseTest : public BlockMergeTest {
+    void SetUp() override {
+        forced_matrix_type = "dense";
+        BlockMergeTest::SetUp();
+    }
+};
+
 TEST_F(NonparametricEntropyTest, SetUpWorksCorrectly) {
     EXPECT_EQ(graph.num_vertices(), 11);
     EXPECT_EQ(graph.out_neighbors().size(), graph.num_vertices());
@@ -268,5 +287,106 @@ TEST_F(NonparametricBlockMergeEntropyTest, BlockmodelDeltaMDLIsCorrectlyComputeW
     double dE = entropy::nonparametric::block_merge_delta_mdl(B, {1, B.degrees_out(0),
                                                        B.degrees_in(0), B.degrees(0)}, graph, Deltas);
     double E_after = entropy::nonparametric::mdl(B2, graph);  // 11, 23);
+    EXPECT_FLOAT_EQ(E_after - E_before, dE);
+}
+
+// Dense matrix versions
+
+TEST_F(NonparametricEntropyDenseTest, MDLGivesCorrectAnswer) {
+    utils::print<long>(B.block_assignment());
+    double E = entropy::nonparametric::mdl(B, graph);
+    EXPECT_FLOAT_EQ(E, SIMPLE_NONPARAMETRIC_ENTROPY) << "Calculated entropy = " << E << " but was expecting " << SIMPLE_NONPARAMETRIC_ENTROPY;
+}
+
+TEST_F(NonparametricEntropyDenseTest, SparseEntropyGivesCorrectAnswer) {
+    utils::print<long>(B.block_assignment());
+    double E = entropy::nonparametric::sparse_entropy(B, graph);
+    EXPECT_FLOAT_EQ(E, SIMPLE_SPARSE_ENTROPY) << "Calculated entropy = " << E << " but was expecting " << SIMPLE_SPARSE_ENTROPY;
+}
+
+TEST_F(NonparametricEntropyDenseTest, DegreeCorrectedMDLGivesCorrectAnswer) {
+    args.degreecorrected = true;
+    utils::print<long>(B.block_assignment());
+    double E = entropy::nonparametric::mdl(B, graph);
+    EXPECT_FLOAT_EQ(E, ENTROPY) << "Calculated entropy = " << E << " but was expecting " << NONPARAMETRIC_ENTROPY;
+    args.degreecorrected = false;
+}
+
+TEST_F(NonparametricEntropyDenseTest, DegreeCorrectedSparseEntropyGivesCorrectAnswer) {
+    args.degreecorrected = true;
+    utils::print<long>(B.block_assignment());
+    double E = entropy::nonparametric::sparse_entropy(B, graph);
+    EXPECT_FLOAT_EQ(E, SPARSE_ENTROPY) << "Calculated entropy = " << E << " but was expecting " << SPARSE_ENTROPY;
+    args.degreecorrected = false;
+}
+
+TEST_F(NonparametricEntropyDenseTest, PartitionDLGivesCorrectAnswer) {
+    utils::print<long>(B.block_assignment());
+    double E = entropy::nonparametric::get_partition_dl(graph.num_vertices(), B);
+    EXPECT_FLOAT_EQ(E, PARTITION_DL) << "Calculated entropy = " << E << " but was expecting " << PARTITION_DL;
+}
+
+TEST_F(NonparametricEntropyDenseTest, DegreeDLGivesCorrectAnswer) {
+    utils::print<long>(B.block_assignment());
+    double E = entropy::nonparametric::get_deg_dl_dist(B);
+    EXPECT_FLOAT_EQ(E, 0.00) << "Calculated entropy = " << E << " but was expecting " << 0.00;
+}
+
+TEST_F(NonparametricEntropyDenseTest, DegreeCorrectedDegreeDLGivesCorrectAnswer) {
+    args.degreecorrected = true;
+    utils::print<long>(B.block_assignment());
+    double E = entropy::nonparametric::get_deg_dl_dist(B);
+    EXPECT_FLOAT_EQ(E, DEGREE_DL) << "Calculated entropy = " << E << " but was expecting " << DEGREE_DL;
+    args.degreecorrected = false;
+}
+
+TEST_F(NonparametricEntropyDenseTest, DeltaMDLUsingBlockmodelDeltasGivesCorrectAnswer) {
+    long vertex = 7;
+    double E_before = entropy::nonparametric::mdl(B, graph);
+    double delta_entropy = entropy::nonparametric::delta_mdl(B, graph, vertex, Deltas, Proposal);
+    B.move_vertex(V7, Deltas, Proposal);
+    long blockmodel_edges = utils::sum<long>(B.blockmatrix()->values());
+    EXPECT_EQ(blockmodel_edges, graph.num_edges())
+                        << "edges in blockmodel = " << blockmodel_edges << " edges in graph = " << graph.num_edges();
+    double E_after = entropy::nonparametric::mdl(B, graph);
+    EXPECT_FLOAT_EQ(delta_entropy, E_after - E_before) << "calculated dE was " << delta_entropy
+                                                       << " but actual dE was " << E_after << " - " << E_before << " = "
+                                                       << E_after - E_before;
+}
+
+TEST_F(NonparametricEntropyDenseTest, SpecialCaseShouldGiveCorrectDeltaMDL) {
+    long vertex = 6;
+    utils::ProposalAndEdgeCounts proposal{0, 1, 2, 3};
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex, false);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex, true);
+    SparseEdgeCountUpdates updates;
+    Delta deltas = finetune::blockmodel_delta(6, 3, 0, out_edges, in_edges, B3);
+    std::cout << "before copies" << std::endl;
+    Blockmodel B4 = B3.copy();
+    utils::print<long>(B4.block_assignment());
+    Blockmodel B5 = B3.copy();
+    std::cout << "before move_vertex" << std::endl;
+    args.parametric = false;
+    VertexMove result = finetune::move_vertex(6, 3, proposal, B4, graph, out_edges, in_edges);
+    std::cout << "============ B5.move_vertex()" << std::endl;
+    B5.move_vertex(V6, deltas, proposal);
+    std::cout << "before mdl" << std::endl;
+    B3.print_blockmodel();
+    double E_before = entropy::nonparametric::mdl(B3, graph);
+    EXPECT_FLOAT_EQ(E_before, 81.44696150567646);
+    B5.print_blockmodel();
+    double E_after = entropy::nonparametric::mdl(B5, graph);
+    EXPECT_FLOAT_EQ(E_after, 82.12655765285804);
+    double dE = E_after - E_before;
+    EXPECT_FLOAT_EQ(dE, result.delta_entropy);
+    args.parametric = true;
+}
+
+TEST_F(NonparametricBlockMergeEntropyDenseTest, BlockmodelDeltaMDLIsCorrectlyComputeWithBlockmodelDeltasSansBlockDegrees) {
+    double E_before = entropy::nonparametric::mdl(B, graph);
+    utils::print<long>(B2.block_assignment());
+    double dE = entropy::nonparametric::block_merge_delta_mdl(B, {1, B.degrees_out(0),
+                                                       B.degrees_in(0), B.degrees(0)}, graph, Deltas);
+    double E_after = entropy::nonparametric::mdl(B2, graph);
     EXPECT_FLOAT_EQ(E_after - E_before, dE);
 }

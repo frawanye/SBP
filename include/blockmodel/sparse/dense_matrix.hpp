@@ -63,8 +63,11 @@ class DenseMatrix : public ISparseMatrix {
 
   private:
     std::vector<std::vector<long>> matrix;
-    // For getcol_sparseref and getrow_sparseref, we need temporary storage
-    mutable MapVector<long> temp_sparse_vector;
+    // Ring buffer of 4 slots so concurrent sparseref callers (e.g. the 4 in
+    // delta_mdl) each get a stable reference rather than all sharing one vector.
+    static constexpr size_t SPARSEREF_SLOTS = 4;
+    mutable std::array<MapVector<long>, SPARSEREF_SLOTS> temp_sparse_vectors;
+    mutable size_t temp_vector_idx = 0;
 };
 
 #endif // CPPSBP_PARTITION_DENSE_MATRIX_HPP
