@@ -39,6 +39,8 @@ protected:
     void ToySetUp(bool transpose) {
         args.threads = 1;
         rng::init_generators();
+        // TODO: refactor code-base so nonparametric is the default, and the current default functions are renamed to parametric_*
+        args.parametric = true;
         args.matrix_type = transpose ? "sparse" : "sparse_transpose";
         std::vector<std::vector<long>> edges {
                 {0, 0},
