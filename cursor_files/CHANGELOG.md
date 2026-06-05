@@ -4,6 +4,26 @@ This file documents changes made to the SBP codebase during interactive AI-assis
 
 ---
 
+## 2026-06-04 — Add `--splitrate` command-line argument to TopDownSBP
+
+### Summary
+Exposed the TopDownSBP initial-expansion multiplier as a command-line argument `--splitrate` (default 1.25) instead of the previously hardcoded value. This allows tuning the coarseness of block splitting per iteration without recompiling.
+
+### Changes to core files
+
+#### `include/args.hpp`
+- Added `float splitrate` member to `Args`.
+- Added `TCLAP::ValueArg<float>` for `--splitrate` with default `1.25` and description explaining the effect of different values.
+- Added `this->splitrate = _splitrate.getValue()` in the parse block.
+
+#### `src/blockmodel/blockmodel_triplet.cpp`
+- Replaced hardcoded `1.25` on line 116 with `args.splitrate` in `TopDownBlockmodelTriplet::get_next_blockmodel()`.
+
+### Background
+Experiments at 5k–200k vertices showed that reducing the multiplier from `1.5` (original) to `1.25` consistently improved NMI (+0.02–0.06) and F1 (+0.05–0.12) across all graph sizes and matrix types, while also reducing wall time by ~13–16% at 200k vertices. Making it an argument enables further tuning without recompilation.
+
+---
+
 ## 2026-06-04 — Dense matrix test coverage
 
 ### Summary

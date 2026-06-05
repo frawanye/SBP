@@ -46,6 +46,7 @@ public:  // Everything in here is public, because why not?
     std::string samplingalg;
     std::string split;
     std::string splitinit;
+    float splitrate;
     int subgraphs;
     std::string subgraphpartition;
     std::string tag;
@@ -140,6 +141,11 @@ public:  // Everything in here is public, because why not?
                                                 "random|snowball|single-snowball|connectivity-snowball", parser);
             TCLAP::ValueArg<std::string> _splitinit("", "splitinit", "The type of split initialization to use", false, "random",
                                                     "random|degree-weighted|high-degree", parser);
+            TCLAP::ValueArg<float> _splitrate("", "splitrate", "Growth factor for the target block count during the "
+                                              "TopDownSBP initial expansion phase. Each iteration targets "
+                                              "ceil(current_blocks * splitrate) blocks. Smaller values (e.g. 1.1) "
+                                              "make finer-grained splits; larger values (e.g. 1.5) are coarser.",
+                                              false, 1.25, "> 1.0", parser);
             TCLAP::ValueArg<int> _subgraphs("", "subgraphs", "If running divide and conquer SBP, the number of subgraphs"
                                             "to partition the data into. Must be <= number of MPI ranks. If <= 1, set to number of MPI ranks",
                                             false, 0, "<= number of MPI ranks>", parser);
@@ -194,6 +200,7 @@ public:  // Everything in here is public, because why not?
             this->samplingalg = _samplingalg.getValue();
             this->split = _split.getValue();
             this->splitinit = _splitinit.getValue();
+            this->splitrate = _splitrate.getValue();
             this->subgraphs = _subgraphs.getValue();
             this->subgraphpartition = _subgraphpartition.getValue();
             this->tag = _tag.getValue();

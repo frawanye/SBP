@@ -113,7 +113,7 @@ Blockmodel TopDownBlockmodelTriplet::get_next_blockmodel(Blockmodel &old_blockmo
     if (this->golden_ratio_not_reached()) {
         Blockmodel blockmodel = this->get(1).copy();
 //        blockmodel.setNum_blocks_to_merge(long(blockmodel.num_blocks() * (1.0/BLOCK_REDUCTION_RATE)));
-        blockmodel.setNum_blocks_to_merge(long(ceil(blockmodel.num_blocks() * 1.5)));
+        blockmodel.setNum_blocks_to_merge(long(ceil(blockmodel.num_blocks() * args.splitrate)));
         if (blockmodel.getNum_blocks_to_merge() == 0 ||
             blockmodel.getNum_blocks_to_merge() >= (long) blockmodel.block_assignment().size()) {
             this->optimal_num_blocks_found = true;
