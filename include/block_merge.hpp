@@ -11,8 +11,8 @@
 // #include <omp.h>
 #include "common.hpp"
 #include "blockmodel/blockmodel.hpp"
-// #include "blockmodel/sparse/boost_mapped_matrix.hpp"
-#include "blockmodel/sparse/csparse_matrix.hpp"
+// #include "matrix/boost_mapped_matrix.hpp"
+#include "matrix/csparse_matrix.hpp"
 #include "typedefs.hpp"
 #include "graph.hpp"
 #include "utils.hpp"

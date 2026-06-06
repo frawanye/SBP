@@ -1,12 +1,12 @@
 /**
  * Functions for porting the CPU SBP code to the GPU. Currently only contains functions related to the MCMC phase.
  */
-#ifndef SBP_BLOCKMODEL_SPARSE_CSR_MATRIX_HPP
-#define SBP_BLOCKMODEL_SPARSE_CSR_MATRIX_HPP
+#ifndef SBP_GPU_HPP
+#define SBP_GPU_HPP
 
 #include <vector>
 #include "blockmodel.hpp"
-#include "gpu_csr.hpp"
+#include "matrix/gpu_csr.hpp"
 #include "typedefs.hpp"
 
 /**
@@ -21,4 +21,4 @@ class GPUBlockmodel {
     
 };
 
-#endif // SBP_BLOCKMODEL_SPARSE_CSR_MATRIX_HPP
+#endif // SBP_GPU_HPP

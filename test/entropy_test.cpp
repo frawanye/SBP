@@ -4,7 +4,7 @@
 //#include <gmock/gmock.h>
 
 #include "blockmodel.hpp"
-#include "blockmodel/sparse/delta.hpp"
+#include "matrix/delta.hpp"
 #include "entropy.hpp"
 #include "finetune.hpp"
 #include "graph.hpp"

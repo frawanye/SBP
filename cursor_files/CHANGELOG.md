@@ -4,6 +4,35 @@ This file documents changes made to the SBP codebase during interactive AI-assis
 
 ---
 
+## 2026-06-05 — Move matrix headers/sources from `blockmodel/sparse/` to `matrix/`
+
+### Summary
+Relocated all matrix class headers and sources from `include/blockmodel/sparse/` and `src/blockmodel/sparse/` into new `include/matrix/` and `src/matrix/` directories. This is the first of two steps toward converting the graph's adjacency storage to CSR format for future OpenMP GPU offloading on MI300A.
+
+No logic was changed; this is a pure reorganization. All 113/117 tests pass (the 4 failures are pre-existing: `NonparametricEntropyTest` and `NonparametricEntropyDenseTest` degree-corrected variants, the latter added after the `.cursorrules` baseline was written).
+
+### Files moved
+- `include/blockmodel/sparse/{csparse_matrix,dense_matrix,dict_matrix,dict_transpose_matrix,boost_mapped_matrix,gpu_csr,delta,vertex_level_delta}.hpp` → `include/matrix/`
+- `src/blockmodel/sparse/{dense_matrix,dict_matrix,dict_transpose_matrix,boost_mapped_matrix,pointer_delta}.cpp` → `src/matrix/`
+
+### Path fixes applied
+- `../../utils.hpp` → `../utils.hpp` in `dense_matrix.hpp`, `dict_matrix.hpp`, `dict_transpose_matrix.hpp`, `boost_mapped_matrix.hpp`
+- Fixed duplicate include guard: `gpu_csr.hpp` had the same guard (`SBP_BLOCKMODEL_SPARSE_CSR_MATRIX_HPP`) as `include/gpu.hpp`; `gpu_csr.hpp` now uses `SBP_MATRIX_GPU_CSR_HPP`, `gpu.hpp` uses `SBP_GPU_HPP`.
+- `pointer_delta.cpp`: `blockmodel/sparse/vertex_level_delta.hpp` → `matrix/vertex_level_delta.hpp`
+
+### Include updates in consuming files
+All `#include "blockmodel/sparse/X.hpp"` and `#include "sparse/X.hpp"` references updated to `#include "matrix/X.hpp"` in:
+- `include/blockmodel/blockmodel.hpp`
+- `include/distributed/two_hop_blockmodel.hpp`
+- `include/finetune.hpp`, `include/common.hpp`, `include/block_merge.hpp`
+- `include/gpu.hpp`
+- `test/dense_matrix_test.cpp`, `test/finetune_test.cpp`, `test/entropy_test.cpp`, `test/nonparametric_entropy_test.cpp`, `test/block_merge_test.cpp`
+
+### Build system
+- `CMakeLists.txt`: `include/blockmodel/sparse` → `include/matrix` in `INCLUDE_DIRS`; `src/blockmodel/sparse/*.cpp` → `src/matrix/*.cpp` for the three compiled matrix sources.
+
+---
+
 ## 2026-06-04 — Add `--splitrate` command-line argument to TopDownSBP
 
 ### Summary

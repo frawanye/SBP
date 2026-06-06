@@ -8,7 +8,7 @@
 
 #include "csparse_matrix.hpp"
 #include "delta.hpp"
-#include "../../utils.hpp"
+#include "../utils.hpp"
 
 /**
  * Dense matrix implementation for blockmodel storage.

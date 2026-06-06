@@ -1,8 +1,8 @@
 /***
  * Sparse Matrix in CSR format, written for GPU offloading.
  */
-#ifndef SBP_BLOCKMODEL_SPARSE_CSR_MATRIX_HPP
-#define SBP_BLOCKMODEL_SPARSE_CSR_MATRIX_HPP
+#ifndef SBP_MATRIX_GPU_CSR_HPP
+#define SBP_MATRIX_GPU_CSR_HPP
 
 #include <vector>
 #include "typedefs.hpp"
@@ -108,4 +108,4 @@ class CSRMatrix {
     long nnz;
 };
 
-#endif // SBP_BLOCKMODEL_SPARSE_CSR_MATRIX_HPP
+#endif // SBP_MATRIX_GPU_CSR_HPP

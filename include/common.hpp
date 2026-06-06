@@ -11,7 +11,7 @@
 // #include <Eigen/Core>
 
 #include "blockmodel/blockmodel.hpp"
-#include "blockmodel/sparse/csparse_matrix.hpp"
+#include "matrix/csparse_matrix.hpp"
 #include "typedefs.hpp"
 #include "fastlog.hpp"
 #include "rng.hpp"

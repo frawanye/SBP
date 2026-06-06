@@ -17,9 +17,9 @@
 #include "delta.hpp"
 #include "globals.hpp"
 #include "graph.hpp"
-#include "sparse/dense_matrix.hpp"
-#include "sparse/dict_matrix.hpp"
-#include "sparse/dict_transpose_matrix.hpp"
+#include "matrix/dense_matrix.hpp"
+#include "matrix/dict_matrix.hpp"
+#include "matrix/dict_transpose_matrix.hpp"
 #include "typedefs.hpp"
 #include "utils.hpp"
 
