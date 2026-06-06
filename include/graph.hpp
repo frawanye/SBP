@@ -43,6 +43,7 @@ public:
         this->_num_edges = num_edges;
         this->_self_edges = self_edges;
         this->_assignment = assignment;
+        this->build_csr();
         this->sort_vertices();
     }
     Graph() = default;
@@ -56,8 +57,10 @@ public:
     //============================================
     // GETTERS & SETTERS
     //============================================
-    /// Adds an edge to the graph (staging only; call sort_vertices() to finalize CSR).
+    /// Adds an edge to the staging adjacency lists. Call build_csr() when done adding edges.
     void add_edge(long from, long to);
+    /// Builds CSR from the staging adjacency lists and frees staging memory.
+    void build_csr();
     /// Returns a const reference to the assignment
     const std::vector<long> &assignment() const { return this->_assignment; }
     /// Sets the assignment vector for the given graph
@@ -71,11 +74,7 @@ public:
     /// Returns a vector containing the vertex degrees for every vertex in the graph
     std::vector<long> degrees() const;
     /// Returns a NeighborView of the in-neighbors of vertex `v`
-    NeighborView in_neighbors(long v) const {
-        if (this->_csr_ready)
-            return this->_in_csr.neighbors(v);
-        return NeighborView(this->_in_staging[v].data(), (long)this->_in_staging[v].size());
-    }
+    NeighborView in_neighbors(long v) const { return this->_in_csr.neighbors(v); }
     /// Returns the list of high degree vertices
     const std::vector<long> &high_degree_vertices() const { return this->_high_degree_vertices; }
     /// Returns the list of low degree vertices
@@ -92,16 +91,12 @@ public:
     /// Returns the number of vertices in this graph
     long num_vertices() const { return this->_num_vertices; }
     /// Returns a NeighborView of the out-neighbors of vertex `v`
-    NeighborView out_neighbors(long v) const {
-        if (this->_csr_ready)
-            return this->_out_csr.neighbors(v);
-        return NeighborView(this->_out_staging[v].data(), (long)this->_out_staging[v].size());
-    }
+    NeighborView out_neighbors(long v) const { return this->_out_csr.neighbors(v); }
     /// Returns a const reference to the out-adjacency CSR (GPU-mappable).
     const CSR& out_csr() const { return this->_out_csr; }
     /// Returns a const reference to the in-adjacency CSR (GPU-mappable).
     const CSR& in_csr() const { return this->_in_csr; }
-    /// Finalizes the graph: sorts vertices into low/high degree lists and builds CSR.
+    /// Sorts vertices into low/high degree lists. build_csr() must be called first.
     void sort_vertices();
     /// Returns a list of edges, sorted by degree product
     [[nodiscard]] std::vector<std::pair<std::pair<long, long>, long>> sorted_edge_list() const;
@@ -115,15 +110,13 @@ protected:
     std::vector<long> _high_degree_vertices;
     /// Stores a list of the low degree vertices
     std::vector<long> _low_degree_vertices;
-    /// Staging adjacency lists used during incremental construction (add_edge).
-    /// Kept in memory to support internal helpers (sorted_edge_list, modularity).
+    /// Temporary adjacency lists used during incremental construction (add_edge).
+    /// Freed after build_csr() is called.
     NeighborList _out_staging;
     NeighborList _in_staging;
-    /// CSR adjacency (out- and in-edges). Built by sort_vertices(). GPU-mappable.
+    /// CSR adjacency (out- and in-edges). Built by build_csr(). GPU-mappable.
     CSR _out_csr;
     CSR _in_csr;
-    /// True after sort_vertices() has been called and CSR is valid.
-    bool _csr_ready = false;
     /// The number of vertices in the graph
     long _num_vertices = 0;
     /// The number of edges in the graph

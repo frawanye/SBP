@@ -212,6 +212,7 @@ Sample from_vertices(const Graph &graph, const std::vector<long> &vertices, cons
         }
         sampled_graph.assign(vertex_id, graph.assignment(vertex));
     }
+    sampled_graph.build_csr();
     sampled_graph.sort_vertices();
     return Sample { sampled_graph, mapping };
 }

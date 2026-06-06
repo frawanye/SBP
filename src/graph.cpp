@@ -16,23 +16,24 @@ void Graph::add_edge(long from, long to) {
     // TODO: undirected version?
 }
 
+void Graph::build_csr() {
+    this->_out_csr = CSR(this->_out_staging, this->_num_vertices, this->_num_edges);
+    this->_in_csr  = CSR(this->_in_staging,  this->_num_vertices, this->_num_edges);
+    this->_out_staging.clear();
+    this->_out_staging.shrink_to_fit();
+    this->_in_staging.clear();
+    this->_in_staging.shrink_to_fit();
+}
+
 long Graph::degree(size_t v) const {
-    if (this->_csr_ready)
-        return this->_out_csr.degree((long)v) + this->_in_csr.degree((long)v) - (long)this->_self_edges[v];
-    return long(this->_out_staging[v].size() + this->_in_staging[v].size() - this->_self_edges[v]);
+    return this->_out_csr.degree((long)v) + this->_in_csr.degree((long)v) - (long)this->_self_edges[v];
 }
 
 std::vector<long> Graph::degrees() const {
     std::vector<long> vertex_degrees;
     vertex_degrees.reserve(this->_num_vertices);
-    if (this->_csr_ready) {
-        for (long v = 0; v < this->_num_vertices; ++v)
-            vertex_degrees.push_back(this->_out_csr.degree(v) + this->_in_csr.degree(v) - (long)this->_self_edges[v]);
-    } else {
-        for (long v = 0; v < this->_num_vertices; ++v)
-            vertex_degrees.push_back(long(this->_out_staging[v].size() + this->_in_staging[v].size()
-                                     - this->_self_edges[v]));
-    }
+    for (long v = 0; v < this->_num_vertices; ++v)
+        vertex_degrees.push_back(this->_out_csr.degree(v) + this->_in_csr.degree(v) - (long)this->_self_edges[v]);
     return vertex_degrees;
 }
 
@@ -262,10 +263,6 @@ void Graph::sort_vertices() {
         }
         std::cout << "Num island vertices = " << num_islands << std::endl;
     }
-    // Build CSR from staging now that the graph is fully constructed.
-    this->_out_csr = CSR(this->_out_staging, this->_num_vertices, this->_num_edges);
-    this->_in_csr  = CSR(this->_in_staging,  this->_num_vertices, this->_num_edges);
-    this->_csr_ready = true;
 }
 
 void Graph::degree_product_sort() {
@@ -298,15 +295,10 @@ long Graph::num_islands() const {
 }
 
 std::vector<std::pair<std::pair<long, long>, long>> Graph::sorted_edge_list() const {
-    // Uses staging so this can be called during sort_vertices() before CSR is built.
-    std::vector<long> vertex_degrees;
-    vertex_degrees.reserve(this->_num_vertices);
-    for (long v = 0; v < this->_num_vertices; ++v)
-        vertex_degrees.push_back(long(this->_out_staging[v].size() + this->_in_staging[v].size()
-                                 - this->_self_edges[v]));
+    std::vector<long> vertex_degrees = this->degrees();
     std::vector<std::pair<std::pair<long, long>, long>> edge_info;
     for (long source = 0; source < this->_num_vertices; ++source) {
-        for (const long dest : this->_out_staging[source]) {
+        for (const long dest : this->out_neighbors(source)) {
             long information = vertex_degrees[source] * vertex_degrees[dest];
             edge_info.emplace_back(std::make_pair(source, dest), information);
         }
