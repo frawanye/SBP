@@ -204,7 +204,7 @@ Sample from_vertices(const Graph &graph, const std::vector<long> &vertices, cons
     for (long vertex = 0; vertex < graph.num_vertices(); ++vertex) {
         long vertex_id = mapping[vertex];
         if (vertex_id == -1) continue;
-        const std::vector<long> &neighbors = graph.out_neighbors(vertex);
+        const NeighborView neighbors = graph.out_neighbors(vertex);
         for (long neighbor : neighbors) {
             long neighbor_id = mapping[neighbor];
             if (neighbor_id == -1) continue;

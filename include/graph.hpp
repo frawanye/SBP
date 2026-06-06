@@ -7,11 +7,11 @@
 #include <iostream>
 #include <string>
 
+#include "matrix/csr.hpp"
 #include "typedefs.hpp"
 #include "fs.hpp"
 #include "utils.hpp"
 
-// TODO: replace _out_neighbors and _in_neighbors with our DictTransposeMatrix
 class Graph {
 public:
     explicit Graph(long num_vertices) {
@@ -19,34 +19,26 @@ public:
         this->_num_edges = 0;
         this->_self_edges = utils::constant<bool>(num_vertices, false);
         this->_assignment = utils::constant<long>(num_vertices, -1);
-        while (this->_out_neighbors.size() < size_t(num_vertices)) {
-            this->_out_neighbors.push_back(std::vector<long>());
-        }
-        while (this->_in_neighbors.size() < size_t(num_vertices)) {
-            this->_in_neighbors.push_back(std::vector<long>());
-        }
+        this->_out_staging.resize(num_vertices);
+        this->_in_staging.resize(num_vertices);
     }
     Graph(long num_vertices, size_t reserve) {
         this->_num_vertices = num_vertices;
         this->_num_edges = 0;
         this->_self_edges = utils::constant<bool>(num_vertices, false);
         this->_assignment = utils::constant<long>(num_vertices, -1);
-        size_t current_vertex = 0;
-        while (this->_out_neighbors.size() < size_t(num_vertices)) {
-            this->_out_neighbors.push_back(std::vector<long>());
-            this->_out_neighbors[current_vertex].reserve(reserve);
-        }
-        current_vertex = 0;
-        while (this->_in_neighbors.size() < size_t(num_vertices)) {
-            this->_in_neighbors.push_back(std::vector<long>());
-            this->_in_neighbors[current_vertex].reserve(reserve);
+        this->_out_staging.resize(num_vertices);
+        this->_in_staging.resize(num_vertices);
+        for (long v = 0; v < num_vertices; ++v) {
+            this->_out_staging[v].reserve(reserve);
+            this->_in_staging[v].reserve(reserve);
         }
     }
     Graph(NeighborList &out_neighbors, NeighborList &in_neighbors, long num_vertices, long num_edges,
           const std::vector<bool> &self_edges = std::vector<bool>(),
           const std::vector<long> &assignment = std::vector<long>()) {
-        this->_out_neighbors = out_neighbors;
-        this->_in_neighbors = in_neighbors;
+        this->_out_staging = out_neighbors;
+        this->_in_staging = in_neighbors;
         this->_num_vertices = num_vertices;
         this->_num_edges = num_edges;
         this->_self_edges = self_edges;
@@ -55,12 +47,7 @@ public:
     }
     Graph() = default;
     virtual ~Graph() = default;
-    /// Loads the graph. Assumes the file is saved in the following directory:
-    /// <args.directory>/<args.type>/<args.overlap>Overlap_<args.blocksizevar>BlockSizeVar
-    /// Assumes the graph file is named:
-    /// <args.type>_<args.overlap>Overlap_<args.blocksizevar>BlockSizeVar_<args.numvertices>_nodes.tsv
-    /// Assumes the true assignment file is named:
-    /// <args.type>_<args.overlap>Overlap_<args.blocksizevar>BlockSizeVar_<args.numvertices>_trueBlockmodel.tsv
+    /// Loads the graph from file (TSV or MTX format).
     static Graph load();
     /// Loads the graph if it's in a matrix market format.
     static Graph load_matrix_market(std::vector<std::vector<std::string>> &csv_contents);
@@ -69,9 +56,9 @@ public:
     //============================================
     // GETTERS & SETTERS
     //============================================
-    /// Adds an edge to the graph
+    /// Adds an edge to the graph (staging only; call sort_vertices() to finalize CSR).
     void add_edge(long from, long to);
-    /// Returns a const reference to the assignmnet
+    /// Returns a const reference to the assignment
     const std::vector<long> &assignment() const { return this->_assignment; }
     /// Sets the assignment vector for the given graph
     void assignment(const std::vector<long> &assignment_vector) { this->_assignment = assignment_vector; }
@@ -83,10 +70,12 @@ public:
     long degree(size_t v) const;
     /// Returns a vector containing the vertex degrees for every vertex in the graph
     std::vector<long> degrees() const;
-    /// Returns a const reference to the in neighbors
-    const NeighborList &in_neighbors() const { return this->_in_neighbors; }
-    /// Returns a const reference to the in neighbors of vertex `v`
-    const std::vector<long> &in_neighbors(long v) const { return this->_in_neighbors[v]; }
+    /// Returns a NeighborView of the in-neighbors of vertex `v`
+    NeighborView in_neighbors(long v) const {
+        if (this->_csr_ready)
+            return this->_in_csr.neighbors(v);
+        return NeighborView(this->_in_staging[v].data(), (long)this->_in_staging[v].size());
+    }
     /// Returns the list of high degree vertices
     const std::vector<long> &high_degree_vertices() const { return this->_high_degree_vertices; }
     /// Returns the list of low degree vertices
@@ -102,34 +91,43 @@ public:
     long num_islands() const;
     /// Returns the number of vertices in this graph
     long num_vertices() const { return this->_num_vertices; }
-    /// Returns a const reference to the out neighbors
-    const NeighborList &out_neighbors() const { return this->_out_neighbors; }
-    /// Returns a const reference to the out neighbors of vertex `v`
-    const std::vector<long> &out_neighbors(long v) const { return this->_out_neighbors[v]; }
-    /// Sorts the vertices into low and high degree vertices
+    /// Returns a NeighborView of the out-neighbors of vertex `v`
+    NeighborView out_neighbors(long v) const {
+        if (this->_csr_ready)
+            return this->_out_csr.neighbors(v);
+        return NeighborView(this->_out_staging[v].data(), (long)this->_out_staging[v].size());
+    }
+    /// Returns a const reference to the out-adjacency CSR (GPU-mappable).
+    const CSR& out_csr() const { return this->_out_csr; }
+    /// Returns a const reference to the in-adjacency CSR (GPU-mappable).
+    const CSR& in_csr() const { return this->_in_csr; }
+    /// Finalizes the graph: sorts vertices into low/high degree lists and builds CSR.
     void sort_vertices();
     /// Returns a list of edges, sorted by degree product
     [[nodiscard]] std::vector<std::pair<std::pair<long, long>, long>> sorted_edge_list() const;
-    /// Sorts vertices into low and high influence vertices. Does this via vertex degree products of the graph edges
+    /// Sorts vertices into low and high influence vertices via vertex degree products.
     void degree_product_sort();
 protected:
     /// For every vertex, stores the community they belong to.
     /// If assignment[v] = -1, then the community of v is not known
     std::vector<long> _assignment;
-    /// Stores true if vertex is one of the highest degree vertices
-//    MapVector<bool> _high_degree_vertex;
     /// Stores a list of the high degree vertices
     std::vector<long> _high_degree_vertices;
     /// Stores a list of the low degree vertices
     std::vector<long> _low_degree_vertices;
-    /// For every vertex, stores the incoming neighbors as a std::vector<long>
-    NeighborList _in_neighbors;
-    /// For every vertex, stores the outgoing neighbors as a std::vector<long>
-    NeighborList _out_neighbors;
+    /// Staging adjacency lists used during incremental construction (add_edge).
+    /// Kept in memory to support internal helpers (sorted_edge_list, modularity).
+    NeighborList _out_staging;
+    NeighborList _in_staging;
+    /// CSR adjacency (out- and in-edges). Built by sort_vertices(). GPU-mappable.
+    CSR _out_csr;
+    CSR _in_csr;
+    /// True after sort_vertices() has been called and CSR is valid.
+    bool _csr_ready = false;
     /// The number of vertices in the graph
-    long _num_vertices;
+    long _num_vertices = 0;
     /// The number of edges in the graph
-    long _num_edges;
+    long _num_edges = 0;
     /// Stores true if a vertex has self edges, false otherwise
     std::vector<bool> _self_edges;
     /// Parses a directed graph from csv contents

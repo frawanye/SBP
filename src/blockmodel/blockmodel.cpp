@@ -175,7 +175,7 @@ Blockmodel Blockmodel::from_sample(long num_blocks, const Graph &graph, std::vec
         }
         std::vector<long> block_counts = utils::constant<long>(num_blocks, 0);
         // TODO: this can only handle unweighted graphs
-        std::vector<long> vertex_neighbors = graph.out_neighbors(vertex);  // [vertex];
+        std::vector<long> vertex_neighbors = graph.out_neighbors(vertex).to_vector();
         for (size_t i = 0; i < vertex_neighbors.size(); ++i) {
             long neighbor = vertex_neighbors[i];
             long neighbor_block = _block_assignment[neighbor];

@@ -6,7 +6,7 @@
 
 #include <vector>
 #include "blockmodel.hpp"
-#include "matrix/gpu_csr.hpp"
+#include "matrix/csr.hpp"
 #include "typedefs.hpp"
 
 /**

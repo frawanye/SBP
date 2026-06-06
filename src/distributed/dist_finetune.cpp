@@ -61,8 +61,8 @@ std::vector<Membership> mpi_get_assignment_updates(const std::vector<Membership>
 
 
 bool async_move(const Membership &membership, const Graph &graph, TwoHopBlockmodel &blockmodel) {
-    EdgeWeights out_edges = edge_weights(graph.out_neighbors(), membership.vertex, false);
-    EdgeWeights in_edges = edge_weights(graph.in_neighbors(), membership.vertex, true);
+    EdgeWeights out_edges = edge_weights(graph.out_neighbors(membership.vertex), membership.vertex, false);
+    EdgeWeights in_edges = edge_weights(graph.in_neighbors(membership.vertex), membership.vertex, true);
     Vertex v = { membership.vertex,
                  (long) graph.out_neighbors(membership.vertex).size(),
                  (long) graph.in_neighbors(membership.vertex).size() };
@@ -350,8 +350,8 @@ VertexMove propose_gibbs_move(const TwoHopBlockmodel &blockmodel, long vertex, c
 //        return VertexMove{0.0, did_move, -1, -1 };
 //    }
 
-    EdgeWeights out_edges = edge_weights(graph.out_neighbors(), vertex, false);
-    EdgeWeights in_edges = edge_weights(graph.in_neighbors(), vertex, true);
+    EdgeWeights out_edges = edge_weights(graph.out_neighbors(vertex), vertex, false);
+    EdgeWeights in_edges = edge_weights(graph.in_neighbors(vertex), vertex, true);
 
     utils::ProposalAndEdgeCounts proposal = common::dist::propose_new_block(
             current_block, out_edges, in_edges, blockmodel.block_assignment(), blockmodel, false);
@@ -372,8 +372,8 @@ VertexMove propose_mh_move(TwoHopBlockmodel &blockmodel, long vertex, const Grap
     if (blockmodel.block_size(current_block) == 1) {
         return VertexMove{0.0, did_move, -1, -1 };
     }
-    EdgeWeights out_edges = edge_weights(graph.out_neighbors(), vertex, false);
-    EdgeWeights in_edges = edge_weights(graph.in_neighbors(), vertex, true);
+    EdgeWeights out_edges = edge_weights(graph.out_neighbors(vertex), vertex, false);
+    EdgeWeights in_edges = edge_weights(graph.in_neighbors(vertex), vertex, true);
 
     utils::ProposalAndEdgeCounts proposal = common::dist::propose_new_block(
             current_block, out_edges, in_edges, blockmodel.block_assignment(), blockmodel, false);

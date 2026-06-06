@@ -7,8 +7,8 @@
 #include "mpi_data.hpp"
 
 void Graph::add_edge(long from, long to) {
-    utils::insert(this->_out_neighbors, from , to);
-    utils::insert(this->_in_neighbors, to, from);
+    utils::insert(this->_out_staging, from, to);
+    utils::insert(this->_in_staging, to, from);
     this->_num_edges++;
     if (from == to) {
         this->_self_edges[from] = true;
@@ -17,14 +17,21 @@ void Graph::add_edge(long from, long to) {
 }
 
 long Graph::degree(size_t v) const {
-    return long(this->_out_neighbors[v].size() + this->_in_neighbors[v].size() - this->_self_edges[v]);
+    if (this->_csr_ready)
+        return this->_out_csr.degree((long)v) + this->_in_csr.degree((long)v) - (long)this->_self_edges[v];
+    return long(this->_out_staging[v].size() + this->_in_staging[v].size() - this->_self_edges[v]);
 }
 
 std::vector<long> Graph::degrees() const {
     std::vector<long> vertex_degrees;
-    for (long vertex = 0; vertex < this->_num_vertices; ++vertex) {
-        vertex_degrees.push_back(long(this->_out_neighbors[vertex].size() + this->_in_neighbors[vertex].size()
-                                 - this->_self_edges[vertex]));
+    vertex_degrees.reserve(this->_num_vertices);
+    if (this->_csr_ready) {
+        for (long v = 0; v < this->_num_vertices; ++v)
+            vertex_degrees.push_back(this->_out_csr.degree(v) + this->_in_csr.degree(v) - (long)this->_self_edges[v]);
+    } else {
+        for (long v = 0; v < this->_num_vertices; ++v)
+            vertex_degrees.push_back(long(this->_out_staging[v].size() + this->_in_staging[v].size()
+                                     - this->_self_edges[v]));
     }
     return vertex_degrees;
 }
@@ -85,8 +92,6 @@ Graph Graph::load_matrix_market(std::vector<std::vector<std::string>> &csv_conte
     long num_vertices, num_edges;
     for (ulong i = 0; i < csv_contents.size(); ++i) {
         const std::vector<std::string> &line = csv_contents[i];
-//        std::cout << "line: ";
-//        utils::print<std::string>(line);
         if (line[0][0] == '%') continue;
         num_vertices = std::stoi(line[0]);
         if (num_vertices != std::stoi(line[1])) {
@@ -106,11 +111,11 @@ Graph Graph::load_matrix_market(std::vector<std::vector<std::string>> &csv_conte
         long to = std::stoi(edge[1]) - 1;
         num_vertices = (from + 1 > num_vertices) ? from + 1 : num_vertices;
         num_vertices = (to + 1 > num_vertices) ? to + 1 : num_vertices;
-        utils::insert(out_neighbors, from , to);
-        utils::insert(in_neighbors, to , from);
+        utils::insert(out_neighbors, from, to);
+        utils::insert(in_neighbors, to, from);
         if (args.undirected && from != to) {  // Force symmetric graph to be directed by including reverse edges.
             utils::insert(out_neighbors, to, from);
-            utils::insert(in_neighbors, from , to);
+            utils::insert(in_neighbors, from, to);
             num_edges++;
         }
         if (from == to) {
@@ -153,15 +158,15 @@ double Graph::modularity(const std::vector<long> &assignment) const {
     for (long vertex_i = 0; vertex_i < this->_num_vertices; ++vertex_i) {
         for (long vertex_j = 0; vertex_j < this->_num_vertices; ++vertex_j) {
             if (assignment[vertex_i] != assignment[vertex_j]) continue;
-            long edge_weight = 0.0;
-            for (long neighbor : this->_out_neighbors[vertex_i]) {
+            long edge_weight = 0;
+            for (const long neighbor : this->out_neighbors(vertex_i)) {
                 if (neighbor == vertex_j) {
-                    edge_weight = 1.0;
+                    edge_weight = 1;
                     break;
                 }
             }
-            long deg_out_i = long(this->_out_neighbors[vertex_i].size());
-            long deg_in_j = long(this->_in_neighbors[vertex_j].size());
+            long deg_out_i = (long)this->out_neighbors(vertex_i).size();
+            long deg_in_j  = (long)this->in_neighbors(vertex_j).size();
             double temp = edge_weight - (double(deg_out_i * deg_in_j) / double(this->_num_edges));
             result += temp;
         }
@@ -172,10 +177,10 @@ double Graph::modularity(const std::vector<long> &assignment) const {
 
 std::vector<long> Graph::neighbors(long vertex) const {
     std::vector<long> all_neighbors;
-    for (const long &out_neighbor : this->_out_neighbors[vertex]) {
+    for (const long out_neighbor : this->out_neighbors(vertex)) {
         all_neighbors.push_back(out_neighbor);
     }
-    for (const long &in_neighbor : this->_in_neighbors[vertex]) {
+    for (const long in_neighbor : this->in_neighbors(vertex)) {
         all_neighbors.push_back(in_neighbor);
     }
     return all_neighbors;
@@ -188,7 +193,7 @@ void Graph::parse_directed(NeighborList &in_neighbors, NeighborList &out_neighbo
         long to = std::stoi(edge[1]) - 1;
         num_vertices = (from + 1 > num_vertices) ? from + 1 : num_vertices;
         num_vertices = (to + 1 > num_vertices) ? to + 1 : num_vertices;
-        utils::insert(out_neighbors, from , to);
+        utils::insert(out_neighbors, from, to);
         utils::insert(in_neighbors, to, from);
         while (self_edges.size() < (size_t) num_vertices) {
             self_edges.push_back(false);
@@ -212,7 +217,7 @@ void Graph::parse_undirected(NeighborList &in_neighbors, NeighborList &out_neigh
         long to = std::stoi(edge[1]) - 1;
         num_vertices = (from + 1 > num_vertices) ? from + 1 : num_vertices;
         num_vertices = (to + 1 > num_vertices) ? to + 1 : num_vertices;
-        utils::insert(out_neighbors, from , to);
+        utils::insert(out_neighbors, from, to);
         if (from != to)
             utils::insert(out_neighbors, to, from);
         while (self_edges.size() < (size_t) num_vertices) {
@@ -235,42 +240,35 @@ void Graph::sort_vertices() {
     if (!args.vertex_degree_sort) {
         // Default: use edge degree product for more accurate high-influence vertex identification
         this->degree_product_sort();
-        return;
-    }
-    // Alternative: use vertex degree (faster but less accurate)
-//    std::cout << "Starting to sort vertices" << std::endl;
-//    double start_t = MPI_Wtime();
-    std::vector<long> vertex_degrees = this->degrees();
-    std::vector<int> indices = utils::range<int>(0, this->_num_vertices);
-    // std::nth_element(indices.data(), indices.data() + int(args.mh_percent * this->_num_vertices),
-    std::stable_sort(indices.data(),
-              indices.data() + indices.size(), [&vertex_degrees](size_t i1, size_t i2) {
-              return vertex_degrees[i1] > vertex_degrees[i2];
-    });
-    // std::sort(std::execution::par_unseq, indices.data(), indices.data() + indices.size(),  // sort in descending order
-    //           [vertex_degrees](size_t i1, size_t i2) { return vertex_degrees[i1] > vertex_degrees[i2]; });
-    for (int index = 0; index < this->_num_vertices; ++index) {
-        int vertex = indices[index];
-        if (index < (args.mh_percent * this->_num_vertices)) {
-//            std::cout << "high degree vertex: " << vertex << " degree = " << vertex_degrees[vertex] << std::endl;
-            this->_high_degree_vertices.push_back(vertex);
-        } else {
-//            std::cout << "low degree vertex: " << vertex << " degree = " << vertex_degrees[vertex] << std::endl;
-            this->_low_degree_vertices.push_back(vertex);
+    } else {
+        // Alternative: use vertex degree (faster but less accurate)
+        std::vector<long> vertex_degrees = this->degrees();
+        std::vector<int> indices = utils::range<int>(0, this->_num_vertices);
+        std::stable_sort(indices.data(),
+                  indices.data() + indices.size(), [&vertex_degrees](size_t i1, size_t i2) {
+                  return vertex_degrees[i1] > vertex_degrees[i2];
+        });
+        for (int index = 0; index < this->_num_vertices; ++index) {
+            int vertex = indices[index];
+            if (index < (args.mh_percent * this->_num_vertices)) {
+                this->_high_degree_vertices.push_back(vertex);
+            } else {
+                this->_low_degree_vertices.push_back(vertex);
+            }
         }
+        int num_islands = 0;
+        for (int deg : vertex_degrees) {
+            if (deg == 0) num_islands++;
+        }
+        std::cout << "Num island vertices = " << num_islands << std::endl;
     }
-//    std::cout << "Done sorting vertices, time = " << MPI_Wtime() - start_t << "s" << std::endl;
-//    std::cout << "Range = " << *std::min_element(vertex_degrees.begin(), vertex_degrees.end()) << " - " << *std::max_element(vertex_degrees.begin(), vertex_degrees.end()) << std::endl;
-    int num_islands = 0;
-    for (int deg : vertex_degrees) {
-        if (deg == 0) num_islands++;
-    }
-    std::cout << "Num island vertices = " << num_islands << std::endl;
+    // Build CSR from staging now that the graph is fully constructed.
+    this->_out_csr = CSR(this->_out_staging, this->_num_vertices, this->_num_edges);
+    this->_in_csr  = CSR(this->_in_staging,  this->_num_vertices, this->_num_edges);
+    this->_csr_ready = true;
 }
 
 void Graph::degree_product_sort() {
-//    std::cout << "Starting to sort vertices based on influence" << std::endl;
-//    double start_t = MPI_Wtime();
     std::vector<std::pair<std::pair<long, long>, long>> edge_info = this->sorted_edge_list();
     MapVector<bool> selected;
     auto num_to_select = size_t(args.mh_percent * this->_num_vertices);
@@ -288,7 +286,6 @@ void Graph::degree_product_sort() {
         if (selected[vertex]) continue;
         this->_low_degree_vertices.push_back(vertex);
     }
-//    std::cout << "Done sorting vertices, time = " << MPI_Wtime() - start_t << "s" << std::endl;
 }
 
 long Graph::num_islands() const {
@@ -301,11 +298,15 @@ long Graph::num_islands() const {
 }
 
 std::vector<std::pair<std::pair<long, long>, long>> Graph::sorted_edge_list() const {
-    std::vector<long> vertex_degrees = this->degrees();
+    // Uses staging so this can be called during sort_vertices() before CSR is built.
+    std::vector<long> vertex_degrees;
+    vertex_degrees.reserve(this->_num_vertices);
+    for (long v = 0; v < this->_num_vertices; ++v)
+        vertex_degrees.push_back(long(this->_out_staging[v].size() + this->_in_staging[v].size()
+                                 - this->_self_edges[v]));
     std::vector<std::pair<std::pair<long, long>, long>> edge_info;
     for (long source = 0; source < this->_num_vertices; ++source) {
-        const std::vector<long> &neighbors = this->_out_neighbors[source];
-        for (const long &dest : neighbors) {
+        for (const long dest : this->_out_staging[source]) {
             long information = vertex_degrees[source] * vertex_degrees[dest];
             edge_info.emplace_back(std::make_pair(source, dest), information);
         }

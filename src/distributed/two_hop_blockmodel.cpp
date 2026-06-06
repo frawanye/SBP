@@ -4,7 +4,7 @@
 
 std::vector<long> Rank_indices;
 
-void TwoHopBlockmodel::build_two_hop_blockmodel(const NeighborList &neighbors) {
+void TwoHopBlockmodel::build_two_hop_blockmodel(const CSR &out_csr) {
     if (args.distribute == "none" || args.distribute == "none-edge-balanced" ||
         args.distribute == "none-agg-block-degree-balanced") {
         this->_in_two_hop_radius = utils::constant<bool>(this->_num_blocks, true);
@@ -12,7 +12,7 @@ void TwoHopBlockmodel::build_two_hop_blockmodel(const NeighborList &neighbors) {
     }
     if (args.distribute == "2hop-snowball") {
         this->_my_blocks = std::vector<bool>(this->_num_blocks, false);
-        for (long v = 0; v < (long) neighbors.size(); ++v) {
+        for (long v = 0; v < out_csr.num_rows(); ++v) {
             if (this->owns_vertex(v)) {
                 long b = this->block_assignment(v);
                 this->_my_blocks[b] = true;
@@ -21,14 +21,13 @@ void TwoHopBlockmodel::build_two_hop_blockmodel(const NeighborList &neighbors) {
     }
     // I think there will be a missing block in mcmc phase vertex->neighbor->block->neighbor_block
     this->_in_two_hop_radius = utils::constant<bool>(this->_num_blocks, false);
-    for (ulong vertex = 0; vertex < neighbors.size(); ++vertex) {
-        std::vector<long> vertex_neighbors = neighbors[vertex];
+    for (long vertex = 0; vertex < out_csr.num_rows(); ++vertex) {
+        NeighborView vertex_neighbors = out_csr.neighbors(vertex);
         if (vertex_neighbors.empty()) {
             continue;
         }
         long block = this->_block_assignment[vertex];
-        for (size_t i = 0; i < vertex_neighbors.size(); ++i) {
-            long neighbor = vertex_neighbors[i];
+        for (long neighbor : vertex_neighbors) {
             long neighbor_block = this->_block_assignment[neighbor];
             if (this->_my_blocks[block] || this->_my_blocks[neighbor_block]) {
             // if ((block % mpi.num_processes == mpi.rank) || (neighbor_block % mpi.num_processes == mpi.rank)) {
@@ -68,11 +67,11 @@ void TwoHopBlockmodel::distribute(const Graph &graph) {
     if (args.distribute == "none")
         distribute_none();
     else if (args.distribute == "2hop-round-robin")
-        distribute_2hop_round_robin(graph.out_neighbors());
+        distribute_2hop_round_robin(graph.out_csr());
     else if (args.distribute == "2hop-size-balanced")
-        distribute_2hop_size_balanced(graph.out_neighbors());
+        distribute_2hop_size_balanced(graph.out_csr());
     else if (args.distribute == "2hop-snowball")
-        distribute_2hop_snowball(graph.out_neighbors());
+        distribute_2hop_snowball(graph.out_csr());
     else if (args.distribute == "none-edge-balanced")
         distribute_none_edge_balanced(graph);
     else if (args.distribute == "none-block-degree-balanced")
@@ -203,16 +202,16 @@ void TwoHopBlockmodel::distribute_none_agg_block_degree_balanced(const Graph &gr
     this->_in_two_hop_radius = utils::constant<bool>(this->_num_blocks, true);
 }
 
-void TwoHopBlockmodel::distribute_2hop_round_robin(const NeighborList &neighbors) {
+void TwoHopBlockmodel::distribute_2hop_round_robin(const CSR &out_csr) {
     // Step 1: decide which blocks to own
     this->_my_blocks = utils::constant<bool>(this->_num_blocks, false);
     for (long i = mpi.rank; i < this->_num_blocks; i += mpi.num_processes)
         this->_my_blocks[i] = true;
     // Step 2: find out which blocks are in the 2-hop radius of my blocks
-    build_two_hop_blockmodel(neighbors);
+    build_two_hop_blockmodel(out_csr);
 }
 
-void TwoHopBlockmodel::distribute_2hop_size_balanced(const NeighborList &neighbors) {
+void TwoHopBlockmodel::distribute_2hop_size_balanced(const CSR &out_csr) {
     // Step 1: decide which blocks to own
     this->_my_blocks = utils::constant<bool>(this->_num_blocks, false);
     std::vector<std::pair<long,long>> block_sizes = this->sorted_block_sizes();
@@ -225,30 +224,31 @@ void TwoHopBlockmodel::distribute_2hop_size_balanced(const NeighborList &neighbo
         this->_my_blocks[block] = true;
     }
     // Step 2: find out which blocks are in the 2-hop radius of my blocks
-    build_two_hop_blockmodel(neighbors);
+    build_two_hop_blockmodel(out_csr);
 }
 
-void TwoHopBlockmodel::distribute_2hop_snowball(const NeighborList &neighbors) {
+void TwoHopBlockmodel::distribute_2hop_snowball(const CSR &out_csr) {
     // Step 1: decide which blocks to own
     this->_my_blocks = utils::constant<bool>(this->_num_blocks, false);
-    // std::cout << "my vertices size: " << this->_my_vertices.size() << " neighbors size: " << neighbors.size() << std::endl;
-    if (this->_my_vertices.size() == neighbors.size()) {  // if already done sampling, no need to do it again
+    long nv = out_csr.num_rows();
+    // std::cout << "my vertices size: " << this->_my_vertices.size() << " nv: " << nv << std::endl;
+    if ((long)this->_my_vertices.size() == nv) {  // if already done sampling, no need to do it again
         std::cout << "already done sampling, now just re-assigning blocks based on sampled vertices" << std::endl;
-        for (size_t vertex = 0; vertex < neighbors.size(); ++vertex) {
+        for (long vertex = 0; vertex < nv; ++vertex) {
             if (this->_my_vertices[vertex] == 0) continue;
             long block = this->_block_assignment[vertex];
             this->_my_blocks[block] = true;
         }
     } else {
-        long target = ceil((double) neighbors.size() / (double) mpi.num_processes);
-        this->_my_vertices = utils::constant<long>(neighbors.size(), 0);  // cannot send vector<bool>.data() over MPI
+        long target = (long)ceil((double) nv / (double) mpi.num_processes);
+        this->_my_vertices = utils::constant<long>(nv, 0);  // cannot send vector<bool>.data() over MPI
         std::unordered_set<long> frontier;
         // Snowball Sampling
         srand(mpi.num_processes + mpi.rank);
-        long start = rand() % neighbors.size();  // replace this with a proper long distribution
+        long start = rand() % nv;  // replace this with a proper long distribution
         std::cout << "rank: " << mpi.rank << " with start = " << start << std::endl;
         this->_my_vertices[start] = 1;
-        for (long neighbor : neighbors[start]) {
+        for (long neighbor : out_csr.neighbors(start)) {
             frontier.insert(neighbor);
         }
         long block = this->_block_assignment[start];
@@ -259,7 +259,7 @@ void TwoHopBlockmodel::distribute_2hop_snowball(const NeighborList &neighbors) {
             for (long vertex : frontier) {
                 if (this->_my_vertices[vertex] == 1) continue;
                 this->_my_vertices[vertex] = 1;
-                for (long neighbor : neighbors[vertex]) {
+                for (long neighbor : out_csr.neighbors(vertex)) {
                     new_frontier.insert(neighbor);
                 }
                 block = this->_block_assignment[vertex];
@@ -269,7 +269,7 @@ void TwoHopBlockmodel::distribute_2hop_snowball(const NeighborList &neighbors) {
             }
             if (num_vertices < target && frontier.size() == 0) {  // restart with a new vertex that isn't already selected
                 std::unordered_set<long> candidates;
-                for (long i = 0; i < (long) neighbors.size(); ++i) {
+                for (long i = 0; i < nv; ++i) {
                     if (this->_my_vertices[i] == 0) candidates.insert(i);
                 }
                 long index = rand() % candidates.size();
@@ -277,7 +277,7 @@ void TwoHopBlockmodel::distribute_2hop_snowball(const NeighborList &neighbors) {
                 std::advance(it, index);
                 start = *it;
                 this->_my_vertices[start] = 1;
-                for (long neighbor : neighbors[start]) {
+                for (long neighbor : out_csr.neighbors(start)) {
                     new_frontier.insert(neighbor);
                 }
                 block = this->_block_assignment[start];
@@ -288,8 +288,8 @@ void TwoHopBlockmodel::distribute_2hop_snowball(const NeighborList &neighbors) {
         }
         // Some vertices may be unassigned across all ranks. Find out what they are, and assign 1/num_processes of them
         // to this process.
-        std::vector<long> global_selected(neighbors.size(), 0);
-        MPI_Allreduce(this->_my_vertices.data(), global_selected.data(), neighbors.size(), MPI_LONG, MPI_MAX, mpi.comm);
+        std::vector<long> global_selected(nv, 0);
+        MPI_Allreduce(this->_my_vertices.data(), global_selected.data(), nv, MPI_LONG, MPI_MAX, mpi.comm);
         // if (mpi.rank == 0) {
             // std::cout << "my selected: " << std::boolalpha;
             // utils::print<long>(this->_my_vertices);
@@ -311,7 +311,7 @@ void TwoHopBlockmodel::distribute_2hop_snowball(const NeighborList &neighbors) {
         }
     }
     // Step 2: find out which blocks are in the 2-hop radius of my blocks
-    this->build_two_hop_blockmodel(neighbors);
+    this->build_two_hop_blockmodel(out_csr);
 }
 
 void TwoHopBlockmodel::initialize_edge_counts(const Graph &graph) {
