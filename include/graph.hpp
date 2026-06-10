@@ -10,6 +10,7 @@
 #include "matrix/csr.hpp"
 #include "typedefs.hpp"
 #include "fs.hpp"
+#include "globals.hpp"
 #include "utils.hpp"
 
 class Graph {
@@ -74,7 +75,10 @@ public:
     /// Returns a vector containing the vertex degrees for every vertex in the graph
     std::vector<long> degrees() const;
     /// Returns a NeighborView of the in-neighbors of vertex `v`
-    NeighborView in_neighbors(long v) const { return this->_in_csr.neighbors(v); }
+    NeighborView in_neighbors(long v) const {
+        return args.csrgraph ? this->_in_csr.neighbors(v)
+                             : NeighborView(this->_in_staging[v].data(), (long)this->_in_staging[v].size());
+    }
     /// Returns the list of high degree vertices
     const std::vector<long> &high_degree_vertices() const { return this->_high_degree_vertices; }
     /// Returns the list of low degree vertices
@@ -91,7 +95,10 @@ public:
     /// Returns the number of vertices in this graph
     long num_vertices() const { return this->_num_vertices; }
     /// Returns a NeighborView of the out-neighbors of vertex `v`
-    NeighborView out_neighbors(long v) const { return this->_out_csr.neighbors(v); }
+    NeighborView out_neighbors(long v) const {
+        return args.csrgraph ? this->_out_csr.neighbors(v)
+                             : NeighborView(this->_out_staging[v].data(), (long)this->_out_staging[v].size());
+    }
     /// Returns a const reference to the out-adjacency CSR (GPU-mappable).
     const CSR& out_csr() const { return this->_out_csr; }
     /// Returns a const reference to the in-adjacency CSR (GPU-mappable).

@@ -50,7 +50,7 @@ public:
         this->initialize_edge_counts(graph);
     }
     /// Sets the _in_two_hop_radius for a 2-hop blockmodel.
-    void build_two_hop_blockmodel(const CSR &out_csr);
+    void build_two_hop_blockmodel(const Graph &graph);
     TwoHopBlockmodel copy();
     /// Distributes the blockmodel amongst MPI ranks. Needs to be called before the first call to
     /// initialize_edge_counts, since it sets the _in_two_hop_radius and _my_blocks vectors. After that, it only needs
@@ -88,13 +88,13 @@ private:
     void distribute_none_edge_balanced(const Graph &graph);
     /// 2-Hop data distribution using round-robin assignment, each MPI rank responsible for the vertices in the blocks
     /// mapped to it.
-    void distribute_2hop_round_robin(const CSR &out_csr);
+    void distribute_2hop_round_robin(const Graph &graph);
     /// 2-Hop data distribution, balanced by block size, each MPI rank responsible for the vertices in the blocks
     /// mapped to it.
-    void distribute_2hop_size_balanced(const CSR &out_csr);
+    void distribute_2hop_size_balanced(const Graph &graph);
     /// 2-Hop data distribution, based on snowball sampling over vertices, each MPI rank responsible for the vertices
     /// in the blocks mapped to it.
-    void distribute_2hop_snowball(const CSR &out_csr);
+    void distribute_2hop_snowball(const Graph &graph);
     // ===== Variables
     /// Stores true for in_two_hop_radius[block] if block is stored in this blockmodel.
     std::vector<bool> _in_two_hop_radius;

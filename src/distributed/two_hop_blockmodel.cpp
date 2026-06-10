@@ -4,7 +4,7 @@
 
 std::vector<long> Rank_indices;
 
-void TwoHopBlockmodel::build_two_hop_blockmodel(const CSR &out_csr) {
+void TwoHopBlockmodel::build_two_hop_blockmodel(const Graph &graph) {
     if (args.distribute == "none" || args.distribute == "none-edge-balanced" ||
         args.distribute == "none-agg-block-degree-balanced") {
         this->_in_two_hop_radius = utils::constant<bool>(this->_num_blocks, true);
@@ -12,7 +12,7 @@ void TwoHopBlockmodel::build_two_hop_blockmodel(const CSR &out_csr) {
     }
     if (args.distribute == "2hop-snowball") {
         this->_my_blocks = std::vector<bool>(this->_num_blocks, false);
-        for (long v = 0; v < out_csr.num_rows(); ++v) {
+        for (long v = 0; v < graph.num_vertices(); ++v) {
             if (this->owns_vertex(v)) {
                 long b = this->block_assignment(v);
                 this->_my_blocks[b] = true;
@@ -21,8 +21,8 @@ void TwoHopBlockmodel::build_two_hop_blockmodel(const CSR &out_csr) {
     }
     // I think there will be a missing block in mcmc phase vertex->neighbor->block->neighbor_block
     this->_in_two_hop_radius = utils::constant<bool>(this->_num_blocks, false);
-    for (long vertex = 0; vertex < out_csr.num_rows(); ++vertex) {
-        NeighborView vertex_neighbors = out_csr.neighbors(vertex);
+    for (long vertex = 0; vertex < graph.num_vertices(); ++vertex) {
+        NeighborView vertex_neighbors = graph.out_neighbors(vertex);
         if (vertex_neighbors.empty()) {
             continue;
         }
@@ -67,11 +67,11 @@ void TwoHopBlockmodel::distribute(const Graph &graph) {
     if (args.distribute == "none")
         distribute_none();
     else if (args.distribute == "2hop-round-robin")
-        distribute_2hop_round_robin(graph.out_csr());
+        distribute_2hop_round_robin(graph);
     else if (args.distribute == "2hop-size-balanced")
-        distribute_2hop_size_balanced(graph.out_csr());
+        distribute_2hop_size_balanced(graph);
     else if (args.distribute == "2hop-snowball")
-        distribute_2hop_snowball(graph.out_csr());
+        distribute_2hop_snowball(graph);
     else if (args.distribute == "none-edge-balanced")
         distribute_none_edge_balanced(graph);
     else if (args.distribute == "none-block-degree-balanced")
@@ -202,16 +202,16 @@ void TwoHopBlockmodel::distribute_none_agg_block_degree_balanced(const Graph &gr
     this->_in_two_hop_radius = utils::constant<bool>(this->_num_blocks, true);
 }
 
-void TwoHopBlockmodel::distribute_2hop_round_robin(const CSR &out_csr) {
+void TwoHopBlockmodel::distribute_2hop_round_robin(const Graph &graph) {
     // Step 1: decide which blocks to own
     this->_my_blocks = utils::constant<bool>(this->_num_blocks, false);
     for (long i = mpi.rank; i < this->_num_blocks; i += mpi.num_processes)
         this->_my_blocks[i] = true;
     // Step 2: find out which blocks are in the 2-hop radius of my blocks
-    build_two_hop_blockmodel(out_csr);
+    build_two_hop_blockmodel(graph);
 }
 
-void TwoHopBlockmodel::distribute_2hop_size_balanced(const CSR &out_csr) {
+void TwoHopBlockmodel::distribute_2hop_size_balanced(const Graph &graph) {
     // Step 1: decide which blocks to own
     this->_my_blocks = utils::constant<bool>(this->_num_blocks, false);
     std::vector<std::pair<long,long>> block_sizes = this->sorted_block_sizes();
@@ -224,13 +224,13 @@ void TwoHopBlockmodel::distribute_2hop_size_balanced(const CSR &out_csr) {
         this->_my_blocks[block] = true;
     }
     // Step 2: find out which blocks are in the 2-hop radius of my blocks
-    build_two_hop_blockmodel(out_csr);
+    build_two_hop_blockmodel(graph);
 }
 
-void TwoHopBlockmodel::distribute_2hop_snowball(const CSR &out_csr) {
+void TwoHopBlockmodel::distribute_2hop_snowball(const Graph &graph) {
     // Step 1: decide which blocks to own
     this->_my_blocks = utils::constant<bool>(this->_num_blocks, false);
-    long nv = out_csr.num_rows();
+    long nv = graph.num_vertices();
     // std::cout << "my vertices size: " << this->_my_vertices.size() << " nv: " << nv << std::endl;
     if ((long)this->_my_vertices.size() == nv) {  // if already done sampling, no need to do it again
         std::cout << "already done sampling, now just re-assigning blocks based on sampled vertices" << std::endl;
@@ -248,7 +248,7 @@ void TwoHopBlockmodel::distribute_2hop_snowball(const CSR &out_csr) {
         long start = rand() % nv;  // replace this with a proper long distribution
         std::cout << "rank: " << mpi.rank << " with start = " << start << std::endl;
         this->_my_vertices[start] = 1;
-        for (long neighbor : out_csr.neighbors(start)) {
+        for (long neighbor : graph.out_neighbors(start)) {
             frontier.insert(neighbor);
         }
         long block = this->_block_assignment[start];
@@ -259,7 +259,7 @@ void TwoHopBlockmodel::distribute_2hop_snowball(const CSR &out_csr) {
             for (long vertex : frontier) {
                 if (this->_my_vertices[vertex] == 1) continue;
                 this->_my_vertices[vertex] = 1;
-                for (long neighbor : out_csr.neighbors(vertex)) {
+                for (long neighbor : graph.out_neighbors(vertex)) {
                     new_frontier.insert(neighbor);
                 }
                 block = this->_block_assignment[vertex];
@@ -277,7 +277,7 @@ void TwoHopBlockmodel::distribute_2hop_snowball(const CSR &out_csr) {
                 std::advance(it, index);
                 start = *it;
                 this->_my_vertices[start] = 1;
-                for (long neighbor : out_csr.neighbors(start)) {
+                for (long neighbor : graph.out_neighbors(start)) {
                     new_frontier.insert(neighbor);
                 }
                 block = this->_block_assignment[start];
@@ -311,7 +311,7 @@ void TwoHopBlockmodel::distribute_2hop_snowball(const CSR &out_csr) {
         }
     }
     // Step 2: find out which blocks are in the 2-hop radius of my blocks
-    this->build_two_hop_blockmodel(out_csr);
+    this->build_two_hop_blockmodel(graph);
 }
 
 void TwoHopBlockmodel::initialize_edge_counts(const Graph &graph) {

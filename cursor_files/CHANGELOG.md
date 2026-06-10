@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-06-10 — Add `--csrgraph` flag: both CSR and neighbor-list adjacency available at runtime
+
+### Summary
+Added a boolean `--csrgraph` command-line switch so a single binary can benchmark either the CSR adjacency backend or the original neighbor-list (vector-of-vectors) adjacency. When `--csrgraph` is absent (the new default), the graph stores adjacency as `NeighborList _out_staging/_in_staging` and never builds the CSR. When `--csrgraph` is passed, behavior is identical to the previous default (build CSR, free staging).
+
+All ~100 per-vertex call sites (`finetune.cpp`, `entropy.cpp`, `sample.cpp`, `top_down_sbp.cpp`, `partition.cpp`, tests, etc.) are unchanged — they consume `NeighborView` from `out_neighbors(v)`/`in_neighbors(v)` regardless of backend.
+
+The distributed 2-hop blockmodel code was also refactored: `build_two_hop_blockmodel`, `distribute_2hop_round_robin`, `distribute_2hop_size_balanced`, and `distribute_2hop_snowball` now take `const Graph&` instead of `const CSR&`, making all six distribution schemes work in both modes.
+
+### Files changed
+- `include/args.hpp` — added `bool csrgraph` member; added `TCLAP::SwitchArg --csrgraph` (default `false`/neighbor-list)
+- `include/graph.hpp` — `out_neighbors(v)`/`in_neighbors(v)` branch on `args.csrgraph` (CSR path or staging path); added `#include "globals.hpp"` for `args` extern
+- `src/graph.cpp` — `build_csr()` returns early if `!args.csrgraph`; `degree()`/`degrees()` branch on `args.csrgraph` to use staging sizes in NL mode
+- `include/distributed/two_hop_blockmodel.hpp` — changed 4 method signatures from `const CSR&` to `const Graph&`
+- `src/distributed/two_hop_blockmodel.cpp` — updated implementations to use `graph.num_vertices()` and `graph.out_neighbors(v)` instead of `out_csr.num_rows()` and `out_csr.neighbors(v)`
+
+---
+
 ## 2026-06-05 — Convert `Graph` adjacency to CSR; add `NeighborView`
 
 ### Summary

@@ -17,6 +17,7 @@ void Graph::add_edge(long from, long to) {
 }
 
 void Graph::build_csr() {
+    if (!args.csrgraph) return;  // NL mode: keep staging as the permanent store
     this->_out_csr = CSR(this->_out_staging, this->_num_vertices, this->_num_edges);
     this->_in_csr  = CSR(this->_in_staging,  this->_num_vertices, this->_num_edges);
     this->_out_staging.clear();
@@ -26,14 +27,20 @@ void Graph::build_csr() {
 }
 
 long Graph::degree(size_t v) const {
-    return this->_out_csr.degree((long)v) + this->_in_csr.degree((long)v) - (long)this->_self_edges[v];
+    if (args.csrgraph)
+        return this->_out_csr.degree((long)v) + this->_in_csr.degree((long)v) - (long)this->_self_edges[v];
+    return (long)this->_out_staging[v].size() + (long)this->_in_staging[v].size() - (long)this->_self_edges[v];
 }
 
 std::vector<long> Graph::degrees() const {
     std::vector<long> vertex_degrees;
     vertex_degrees.reserve(this->_num_vertices);
-    for (long v = 0; v < this->_num_vertices; ++v)
-        vertex_degrees.push_back(this->_out_csr.degree(v) + this->_in_csr.degree(v) - (long)this->_self_edges[v]);
+    for (long v = 0; v < this->_num_vertices; ++v) {
+        if (args.csrgraph)
+            vertex_degrees.push_back(this->_out_csr.degree(v) + this->_in_csr.degree(v) - (long)this->_self_edges[v]);
+        else
+            vertex_degrees.push_back((long)this->_out_staging[v].size() + (long)this->_in_staging[v].size() - (long)this->_self_edges[v]);
+    }
     return vertex_degrees;
 }
 
