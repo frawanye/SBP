@@ -4,6 +4,17 @@
 
 #include "cmath"
 
+// TODO (future GPU perf): the delta_mdl / block_merge_delta_mdl functions below
+// currently iterate delta.entries() and then probe delta.get(row,col) != 0 while
+// looping over getrow_sparse/getcol_sparse(proposed_block). On the GPU offload path,
+// fold the delta into a single merge-walk: co-iterate each sorted delta line with the
+// corresponding sorted matrix row/col, classifying each cell by merge position
+// (in both = changed; matrix only = unchanged value, shifted degrees; delta only =
+// new cell). This replaces the entries() loop, the matrix loop, and the get()
+// exclusion in one pass, removing all delta point-lookups. Depends on
+// getrow_sparse/getcol_sparse returning sorted flat arrays on the GPU.
+// See cursor_files/CHANGELOG.md (2026-06-10 "fold Delta into the matrix-row pass").
+
 namespace entropy {
 
 double block_merge_delta_mdl(long current_block, long proposal, long num_edges, const Blockmodel &blockmodel,

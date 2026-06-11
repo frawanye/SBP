@@ -4,7 +4,7 @@
 
 #include "entropy.hpp"
 #include "block_merge.hpp"
-#include "matrix/delta.hpp"
+#include "blockmodel/delta.hpp"
 
 #include "toy_example.hpp"
 

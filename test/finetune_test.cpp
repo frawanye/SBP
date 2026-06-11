@@ -3,7 +3,7 @@
 #include <gtest/gtest.h>
 
 #include "blockmodel.hpp"
-#include "matrix/delta.hpp"
+#include "blockmodel/delta.hpp"
 #include "finetune.hpp"
 #include "graph.hpp"
 #include "globals.hpp"
@@ -111,6 +111,85 @@ TEST_F(FinetuneTest, BlockmodelDeltasAreCorrect) {
     EXPECT_EQ(delta.get(2,0), 1);
     EXPECT_EQ(delta.get(2,1), 0);
     EXPECT_EQ(delta.get(2,2), -3);
+}
+
+/// Verifies that the COO Delta produces identical get() results to the map Delta
+/// for the same vertex move proposal.
+TEST_F(FinetuneTest, CooDeltaGetMatchesMapDelta) {
+    long vertex = 7;
+    long current_block = B.block_assignment(vertex);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex, false);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex, false);
+    // Build both representations for the same move
+    args.coodelta = false;
+    Delta map_delta = finetune::blockmodel_delta(vertex, current_block, Proposal.proposal, out_edges, in_edges, B);
+    args.coodelta = true;
+    Delta coo_delta = finetune::blockmodel_delta(vertex, current_block, Proposal.proposal, out_edges, in_edges, B);
+    args.coodelta = false;
+    // get() must agree on the same known cells
+    EXPECT_EQ(coo_delta.get(0, 0), map_delta.get(0, 0));
+    EXPECT_EQ(coo_delta.get(0, 1), map_delta.get(0, 1));
+    EXPECT_EQ(coo_delta.get(0, 2), map_delta.get(0, 2));
+    EXPECT_EQ(coo_delta.get(1, 0), map_delta.get(1, 0));
+    EXPECT_EQ(coo_delta.get(1, 2), map_delta.get(1, 2));
+    EXPECT_EQ(coo_delta.get(2, 0), map_delta.get(2, 0));
+    EXPECT_EQ(coo_delta.get(2, 1), map_delta.get(2, 1));
+    EXPECT_EQ(coo_delta.get(2, 2), map_delta.get(2, 2));
+    // Absolute values as a cross-check against the known answer
+    EXPECT_EQ(coo_delta.get(0, 0),  1);
+    EXPECT_EQ(coo_delta.get(0, 2),  1);
+    EXPECT_EQ(coo_delta.get(1, 0),  1);
+    EXPECT_EQ(coo_delta.get(1, 2), -1);
+    EXPECT_EQ(coo_delta.get(2, 0),  1);
+    EXPECT_EQ(coo_delta.get(2, 2), -3);
+}
+
+/// Verifies that the non-zero entries reported by the COO Delta match those of
+/// the map Delta (after stripping zero-value entries, since COO may coalesce
+/// cancelling add/sub pairs to zero while map mode retains them explicitly).
+TEST_F(FinetuneTest, CooDeltaEntriesMatchMapDelta) {
+    long vertex = 7;
+    long current_block = B.block_assignment(vertex);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex, false);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex, false);
+    args.coodelta = false;
+    Delta map_delta = finetune::blockmodel_delta(vertex, current_block, Proposal.proposal, out_edges, in_edges, B);
+    args.coodelta = true;
+    Delta coo_delta = finetune::blockmodel_delta(vertex, current_block, Proposal.proposal, out_edges, in_edges, B);
+    args.coodelta = false;
+    // Build maps of (row,col)->val from each delta, filtering out zero-value entries
+    std::map<std::pair<long,long>, long> map_vals, coo_vals;
+    for (const auto &e : map_delta.entries()) {
+        if (std::get<2>(e) != 0)
+            map_vals[{std::get<0>(e), std::get<1>(e)}] = std::get<2>(e);
+    }
+    for (const auto &e : coo_delta.entries()) {
+        if (std::get<2>(e) != 0)
+            coo_vals[{std::get<0>(e), std::get<1>(e)}] = std::get<2>(e);
+    }
+    EXPECT_EQ(coo_vals, map_vals);
+}
+
+/// Same as CooDeltaGetMatchesMapDelta but for a vertex with a self-edge (vertex 10).
+TEST_F(FinetuneTest, CooDeltaGetMatchesMapDeltaWithSelfEdge) {
+    long vertex = 10;
+    long current_block = B.block_assignment(vertex);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex, false);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex, false);
+    args.coodelta = false;
+    Delta map_delta = finetune::blockmodel_delta(vertex, current_block, Proposal.proposal, out_edges, in_edges, B);
+    args.coodelta = true;
+    Delta coo_delta = finetune::blockmodel_delta(vertex, current_block, Proposal.proposal, out_edges, in_edges, B);
+    args.coodelta = false;
+    EXPECT_EQ(coo_delta.self_edge_weight(), map_delta.self_edge_weight());
+    // self_edge_weight should be 1 for vertex 10
+    EXPECT_EQ(coo_delta.self_edge_weight(), 1);
+    // All touched cells must agree
+    for (const auto &e : map_delta.entries()) {
+        long row = std::get<0>(e), col = std::get<1>(e);
+        EXPECT_EQ(coo_delta.get(row, col), map_delta.get(row, col))
+            << "Mismatch at (" << row << "," << col << ")";
+    }
 }
 
 /// TODO: same test but using a vertex with a self edge

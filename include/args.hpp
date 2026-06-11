@@ -51,6 +51,7 @@ public:  // Everything in here is public, because why not?
     std::string subgraphpartition;
     std::string tag;
     int threads;
+    bool coodelta;
     bool csrgraph;
     std::string matrix_type;
     std::string type;
@@ -161,6 +162,9 @@ public:  // Everything in here is public, because why not?
                                                       false, "sparse_transpose", "dense|sparse|sparse_transpose", parser);
             TCLAP::ValueArg<std::string> _type("t", "type", "The type of streaming/name of the graph", false, "static",
                                                "string", parser);
+            TCLAP::SwitchArg _coodelta("", "coodelta", "If set, use sorted COO (coordinate) storage for blockmodel "
+                                      "deltas instead of the default hash-map storage. The COO arrays are GPU-mappable "
+                                      "via omp target map.", parser, false);
             TCLAP::SwitchArg _csrgraph("", "csrgraph", "If set, use CSR adjacency for the graph. "
                                       "Otherwise use the neighbor-list (vector-of-vectors) adjacency.", parser, false);
             TCLAP::SwitchArg _undirected("", "undirected", "If set, graph will be treated as undirected", parser,
@@ -208,6 +212,7 @@ public:  // Everything in here is public, because why not?
             this->subgraphpartition = _subgraphpartition.getValue();
             this->tag = _tag.getValue();
             this->threads = _threads.getValue();
+            this->coodelta = _coodelta.getValue();
             this->csrgraph = _csrgraph.getValue();
             this->matrix_type = _matrix_type.getValue();
             this->type = _type.getValue();

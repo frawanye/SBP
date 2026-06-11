@@ -12,7 +12,7 @@
 namespace block_merge {
 
 Delta blockmodel_delta(long current_block, long proposed_block, const Blockmodel &blockmodel) {
-    Delta delta(current_block, proposed_block, blockmodel.degrees(current_block));
+    Delta delta(current_block, proposed_block, blockmodel.degrees(current_block), args.coodelta);
     for (const std::pair<long, long> &entry: blockmodel.blockmatrix()->getrow_sparse(current_block)) {
         long col = entry.first;  // row = current_block
         long value = entry.second;

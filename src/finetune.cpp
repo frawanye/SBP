@@ -200,7 +200,7 @@ EdgeWeights block_edge_weights(const std::vector<long> &block_assignment, const 
 
 Delta blockmodel_delta(long vertex, long current_block, long proposed_block, const EdgeWeights &out_edges,
                        const EdgeWeights &in_edges, const Blockmodel &blockmodel) {
-    Delta delta(current_block, proposed_block, long(std::max(out_edges.indices.size(), in_edges.indices.size())));
+    Delta delta(current_block, proposed_block, long(std::max(out_edges.indices.size(), in_edges.indices.size())), args.coodelta);
 
     // current_block -> current_block == proposed_block --> proposed_block  (this includes self edges)
     // current_block --> other_block == proposed_block --> other_block

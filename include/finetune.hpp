@@ -13,7 +13,7 @@
 #include "graph.hpp"
 #include "blockmodel/blockmodel.hpp"
 #include "blockmodel/blockmodel_triplet.hpp"
-#include "matrix/delta.hpp"
+#include "blockmodel/delta.hpp"
 #include "globals.hpp"
 #include "utils.hpp"
 #include "typedefs.hpp"
