@@ -390,3 +390,75 @@ TEST_F(NonparametricBlockMergeEntropyDenseTest, BlockmodelDeltaMDLIsCorrectlyCom
     double E_after = entropy::nonparametric::mdl(B2, graph);
     EXPECT_FLOAT_EQ(E_after - E_before, dE);
 }
+
+// COO-mode helpers: same Deltas as ToySetUp and BlockMergeTest::SetUp, built as COO deltas.
+
+static Delta make_coo_np_entropy_deltas() {
+    Delta d(2, 0, 10, true);
+    d.add(0, 0, 1);
+    d.add(0, 2, 1);
+    d.add(1, 0, 1);
+    d.add(1, 2, -1);
+    d.add(2, 0, 1);
+    d.add(2, 2, -3);
+    return d;
+}
+
+static Delta make_coo_np_block_merge_deltas() {
+    Delta d(0, 1, 10, true);
+    d.add(0, 0, -7);
+    d.add(0, 1, -1);
+    d.add(1, 0, -1);
+    d.add(1, 1, 9);
+    d.add(2, 0, -1);
+    d.add(2, 1, 1);
+    return d;
+}
+
+TEST_F(NonparametricEntropyTest, CooDeltaMDLUsingBlockmodelDeltasGivesCorrectAnswer) {
+    long vertex = 7;
+    double E_before = entropy::nonparametric::mdl(B, graph);
+    Delta coo_deltas = make_coo_np_entropy_deltas();
+    double delta_entropy = entropy::nonparametric::delta_mdl(B, graph, vertex, coo_deltas, Proposal);
+    B.move_vertex(V7, coo_deltas, Proposal);
+    long blockmodel_edges = utils::sum<long>(B.blockmatrix()->values());
+    EXPECT_EQ(blockmodel_edges, graph.num_edges())
+                        << "edges in blockmodel = " << blockmodel_edges << " edges in graph = " << graph.num_edges();
+    double E_after = entropy::nonparametric::mdl(B, graph);
+    EXPECT_FLOAT_EQ(delta_entropy, E_after - E_before) << "calculated dE was " << delta_entropy
+                                                       << " but actual dE was " << E_after << " - " << E_before << " = "
+                                                       << E_after - E_before;
+}
+
+TEST_F(NonparametricBlockMergeEntropyTest, CooBlockmodelDeltaMDLIsCorrectlyComputeWithBlockmodelDeltasSansBlockDegrees) {
+    double E_before = entropy::nonparametric::mdl(B, graph);
+    Delta coo_deltas = make_coo_np_block_merge_deltas();
+    double dE = entropy::nonparametric::block_merge_delta_mdl(B, {1, B.degrees_out(0),
+                                                       B.degrees_in(0), B.degrees(0)}, graph, coo_deltas);
+    double E_after = entropy::nonparametric::mdl(B2, graph);
+    EXPECT_FLOAT_EQ(E_after - E_before, dE);
+}
+
+TEST_F(NonparametricEntropyDenseTest, CooDeltaMDLUsingBlockmodelDeltasGivesCorrectAnswer) {
+    long vertex = 7;
+    double E_before = entropy::nonparametric::mdl(B, graph);
+    Delta coo_deltas = make_coo_np_entropy_deltas();
+    double delta_entropy = entropy::nonparametric::delta_mdl(B, graph, vertex, coo_deltas, Proposal);
+    B.move_vertex(V7, coo_deltas, Proposal);
+    long blockmodel_edges = utils::sum<long>(B.blockmatrix()->values());
+    EXPECT_EQ(blockmodel_edges, graph.num_edges())
+                        << "edges in blockmodel = " << blockmodel_edges << " edges in graph = " << graph.num_edges();
+    double E_after = entropy::nonparametric::mdl(B, graph);
+    EXPECT_FLOAT_EQ(delta_entropy, E_after - E_before) << "calculated dE was " << delta_entropy
+                                                       << " but actual dE was " << E_after << " - " << E_before << " = "
+                                                       << E_after - E_before;
+}
+
+TEST_F(NonparametricBlockMergeEntropyDenseTest, CooBlockmodelDeltaMDLIsCorrectlyComputeWithBlockmodelDeltasSansBlockDegrees) {
+    double E_before = entropy::nonparametric::mdl(B, graph);
+    Delta coo_deltas = make_coo_np_block_merge_deltas();
+    double dE = entropy::nonparametric::block_merge_delta_mdl(B, {1, B.degrees_out(0),
+                                                       B.degrees_in(0), B.degrees(0)}, graph, coo_deltas);
+    double E_after = entropy::nonparametric::mdl(B2, graph);
+    EXPECT_FLOAT_EQ(E_after - E_before, dE);
+}

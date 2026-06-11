@@ -436,3 +436,91 @@ TEST_F(BlockMergeEntropyDenseTest, BlockmodelDeltaMDLIsCorrectlyComputeWithBlock
     double E_after = entropy::mdl(B2, graph);
     EXPECT_FLOAT_EQ(E_after - E_before, dE);
 }
+
+// COO-mode helpers: replicate the Deltas built in ToySetUp and BlockMergeTest::SetUp as COO deltas.
+
+static Delta make_coo_entropy_deltas() {
+    // Mirrors ToySetUp: Delta(2, 0) with these six add() calls.
+    Delta d(2, 0, 10, true);
+    d.add(0, 0, 1);
+    d.add(0, 2, 1);
+    d.add(1, 0, 1);
+    d.add(1, 2, -1);
+    d.add(2, 0, 1);
+    d.add(2, 2, -3);
+    return d;
+}
+
+static Delta make_coo_block_merge_deltas() {
+    // Mirrors BlockMergeTest::SetUp: Delta(0, 1) with these six add() calls.
+    Delta d(0, 1, 10, true);
+    d.add(0, 0, -7);
+    d.add(0, 1, -1);
+    d.add(1, 0, -1);
+    d.add(1, 1, 9);
+    d.add(2, 0, -1);
+    d.add(2, 1, 1);
+    return d;
+}
+
+TEST_F(EntropyTest, CooDeltaMDLUsingBlockmodelDeltasGivesCorrectAnswer) {
+    double E_before = entropy::mdl(B, graph);
+    Delta coo_deltas = make_coo_entropy_deltas();
+    double delta_entropy = entropy::delta_mdl(B, coo_deltas, Proposal);
+    B.move_vertex(V7, coo_deltas, Proposal);
+    long blockmodel_edges = utils::sum<long>(B.blockmatrix()->values());
+    EXPECT_EQ(blockmodel_edges, graph.num_edges())
+                        << "edges in blockmodel = " << blockmodel_edges << " edges in graph = " << graph.num_edges();
+    double E_after = entropy::mdl(B, graph);
+    EXPECT_FLOAT_EQ(delta_entropy, E_after - E_before) << "calculated dE was " << delta_entropy
+                                                       << " but actual dE was " << E_after << " - " << E_before << " = "
+                                                       << E_after - E_before;
+}
+
+TEST_F(BlockMergeEntropyTest, CooBlockmodelDeltaMDLIsCorrectlyComputeWithBlockmodelDeltas) {
+    double E_before = entropy::mdl(B, graph);
+    Delta coo_deltas = make_coo_block_merge_deltas();
+    double dE = entropy::block_merge_delta_mdl(0, B, coo_deltas, new_block_degrees);
+    double E_after = entropy::mdl(B2, graph);
+    EXPECT_FLOAT_EQ(E_after - E_before, dE);
+}
+
+TEST_F(BlockMergeEntropyTest, CooBlockmodelDeltaMDLIsCorrectlyComputeWithBlockmodelDeltasSansBlockDegrees) {
+    double E_before = entropy::mdl(B, graph);
+    Delta coo_deltas = make_coo_block_merge_deltas();
+    double dE = entropy::block_merge_delta_mdl(0, {1, B.degrees_out(0),
+                                                       B.degrees_in(0), B.degrees(0)}, B, coo_deltas);
+    double E_after = entropy::mdl(B2, graph);
+    EXPECT_FLOAT_EQ(E_after - E_before, dE);
+}
+
+TEST_F(EntropyDenseTest, CooDeltaMDLUsingBlockmodelDeltasGivesCorrectAnswer) {
+    double E_before = entropy::mdl(B, graph);
+    Delta coo_deltas = make_coo_entropy_deltas();
+    double delta_entropy = entropy::delta_mdl(B, coo_deltas, Proposal);
+    B.move_vertex(V7, coo_deltas, Proposal);
+    long blockmodel_edges = utils::sum<long>(B.blockmatrix()->values());
+    EXPECT_EQ(blockmodel_edges, graph.num_edges())
+                        << "edges in blockmodel = " << blockmodel_edges << " edges in graph = " << graph.num_edges();
+    double E_after = entropy::mdl(B, graph);
+    EXPECT_FLOAT_EQ(delta_entropy, E_after - E_before) << "calculated dE was " << delta_entropy
+                                                       << " but actual dE was " << E_after << " - " << E_before << " = "
+                                                       << E_after - E_before;
+}
+
+TEST_F(BlockMergeEntropyDenseTest, CooBlockmodelDeltaMDLIsCorrectlyComputeWithBlockmodelDeltas) {
+    double E_before = entropy::mdl(B, graph);
+    Delta coo_deltas = make_coo_block_merge_deltas();
+    double dE = entropy::block_merge_delta_mdl(0, B, coo_deltas, new_block_degrees);
+    double E_after = entropy::mdl(B2, graph);
+    EXPECT_FLOAT_EQ(E_after - E_before, dE);
+}
+
+TEST_F(BlockMergeEntropyDenseTest, CooBlockmodelDeltaMDLIsCorrectlyComputeWithBlockmodelDeltasSansBlockDegrees) {
+    double E_before = entropy::mdl(B, graph);
+    Delta coo_deltas = make_coo_block_merge_deltas();
+    double dE = entropy::block_merge_delta_mdl(0, {1, B.degrees_out(0),
+                                                       B.degrees_in(0), B.degrees(0)}, B, coo_deltas);
+    double E_after = entropy::mdl(B2, graph);
+    EXPECT_FLOAT_EQ(E_after - E_before, dE);
+}

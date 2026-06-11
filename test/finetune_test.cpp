@@ -522,3 +522,59 @@ TEST_F(FinetuneDenseTest, SpecialCaseBlockmodelDeltasAreCorrect) {
     EXPECT_EQ(delta.get(3,2), -1);
     EXPECT_EQ(delta.get(3,3), -1);
 }
+
+// COO-mode variants: build a COO delta from the same add() calls as ToySetUp's Deltas and apply it
+// through move_vertex; the resulting blockmatrix must match the edge-count-update path (B1).
+
+static Delta make_coo_finetune_deltas() {
+    Delta d(2, 0, 10, true);
+    d.add(0, 0, 1);
+    d.add(0, 2, 1);
+    d.add(1, 0, 1);
+    d.add(1, 2, -1);
+    d.add(2, 0, 1);
+    d.add(2, 2, -3);
+    return d;
+}
+
+TEST_F(FinetuneTest, CooBlockmodelDeltaGivesSameBlockmatrixAsEdgeCountUpdates) {
+    long vertex = 7;
+    long current_block = B.block_assignment(vertex);
+    Blockmodel B1 = B.copy();
+    B1.move_vertex(V7, current_block, Proposal.proposal, Updates, new_block_degrees.block_degrees_out,
+                  new_block_degrees.block_degrees_in, new_block_degrees.block_degrees);
+    Delta coo_deltas = make_coo_finetune_deltas();
+    Blockmodel B2 = B.copy();
+    B2.move_vertex(V7, Proposal.proposal, coo_deltas, new_block_degrees.block_degrees_out,
+                   new_block_degrees.block_degrees_in, new_block_degrees.block_degrees);
+    for (long row = 0; row < B.num_blocks(); ++row) {
+        for (long col = 0; col < B.num_blocks(); ++col) {
+            long val1 = B1.blockmatrix()->get(row, col);
+            long val2 = B2.blockmatrix()->get(row, col);
+            EXPECT_EQ(val1, val2)
+                << "Blockmatrices differ at " << row << "," << col << " : using updates, value = " << val1
+                << " using COO deltas, value = " << val2;
+        }
+    }
+}
+
+TEST_F(FinetuneDenseTest, CooBlockmodelDeltaGivesSameBlockmatrixAsEdgeCountUpdates) {
+    long vertex = 7;
+    long current_block = B.block_assignment(vertex);
+    Blockmodel B1 = B.copy();
+    B1.move_vertex(V7, current_block, Proposal.proposal, Updates, new_block_degrees.block_degrees_out,
+                  new_block_degrees.block_degrees_in, new_block_degrees.block_degrees);
+    Delta coo_deltas = make_coo_finetune_deltas();
+    Blockmodel B2 = B.copy();
+    B2.move_vertex(V7, Proposal.proposal, coo_deltas, new_block_degrees.block_degrees_out,
+                   new_block_degrees.block_degrees_in, new_block_degrees.block_degrees);
+    for (long row = 0; row < B.num_blocks(); ++row) {
+        for (long col = 0; col < B.num_blocks(); ++col) {
+            long val1 = B1.blockmatrix()->get(row, col);
+            long val2 = B2.blockmatrix()->get(row, col);
+            EXPECT_EQ(val1, val2)
+                << "Blockmatrices differ at " << row << "," << col << " : using updates, value = " << val1
+                << " using COO deltas, value = " << val2;
+        }
+    }
+}
