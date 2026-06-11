@@ -68,6 +68,30 @@ struct longPairHash {
 
 typedef std::vector<std::vector<long>> NeighborList;
 
+/**
+ * Non-owning view into a contiguous range of neighbor ids (a row of a CSR matrix).
+ * Supports range-for, .size(), operator[], .empty(), and .to_vector().
+ * Lifetime is bound to the CSR object that owns the underlying array.
+ */
+struct NeighborView {
+    NeighborView() : ptr(nullptr), len(0) {}
+    NeighborView(const long* ptr, long len) : ptr(ptr), len(len) {}
+
+    const long* begin() const { return ptr; }
+    const long* end()   const { return ptr + len; }
+    long size()         const { return len; }
+    bool empty()        const { return len == 0; }
+    const long& operator[](long i) const { return ptr[i]; }
+
+    /// Copy into a new std::vector<long>.
+    std::vector<long> to_vector() const {
+        return std::vector<long>(ptr, ptr + len);
+    }
+
+    const long* ptr;
+    long len;
+};
+
 template <typename T>
 struct SparseVector {
     std::vector<long>    idx;   // The index of the corresponding element in data

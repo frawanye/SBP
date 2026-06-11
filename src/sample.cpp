@@ -204,7 +204,7 @@ Sample from_vertices(const Graph &graph, const std::vector<long> &vertices, cons
     for (long vertex = 0; vertex < graph.num_vertices(); ++vertex) {
         long vertex_id = mapping[vertex];
         if (vertex_id == -1) continue;
-        const std::vector<long> &neighbors = graph.out_neighbors(vertex);
+        const NeighborView neighbors = graph.out_neighbors(vertex);
         for (long neighbor : neighbors) {
             long neighbor_id = mapping[neighbor];
             if (neighbor_id == -1) continue;
@@ -212,6 +212,7 @@ Sample from_vertices(const Graph &graph, const std::vector<long> &vertices, cons
         }
         sampled_graph.assign(vertex_id, graph.assignment(vertex));
     }
+    sampled_graph.build_csr();
     sampled_graph.sort_vertices();
     return Sample { sampled_graph, mapping };
 }

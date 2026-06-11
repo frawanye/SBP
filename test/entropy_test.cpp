@@ -4,7 +4,7 @@
 //#include <gmock/gmock.h>
 
 #include "blockmodel.hpp"
-#include "blockmodel/sparse/delta.hpp"
+#include "matrix/delta.hpp"
 #include "entropy.hpp"
 #include "finetune.hpp"
 #include "graph.hpp"
@@ -70,8 +70,8 @@ class BlockMergeEntropyDenseTest : public BlockMergeTest {
 
 TEST_F(EntropyTest, SetUpWorksCorrectly) {
     EXPECT_EQ(graph.num_vertices(), 11);
-    EXPECT_EQ(graph.out_neighbors().size(), graph.num_vertices());
-    EXPECT_EQ(graph.out_neighbors().size(), graph.in_neighbors().size());
+    EXPECT_EQ((long)graph.num_vertices(), graph.num_vertices());
+    EXPECT_EQ(graph.num_vertices(), graph.num_vertices());
     EXPECT_EQ(graph.num_edges(), 23);
 }
 
@@ -139,8 +139,8 @@ TEST_F(EntropyTest, HastingsCorrectionBlockCountsAreTheSameWithAndWithoutBlockmo
         block_counts1[neighbor_block] += 1;
     }
     utils::print(block_counts1);
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex);
     EdgeWeights blocks_out_neighbors = finetune::block_edge_weights(B.block_assignment(), out_edges);
     EdgeWeights blocks_in_neighbors = finetune::block_edge_weights(B.block_assignment(), in_edges);
     MapVector<long> block_counts2;
@@ -168,8 +168,8 @@ TEST_F(EntropyTest, HastingsCorrectionWithAndWithoutDeltaGivesSameResult) {
     long vertex = 7;
     long current_block = B.block_assignment(vertex);
     double hastings1 = entropy::hastings_correction(vertex, graph, B, Deltas, current_block, Proposal);
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex);
     EdgeWeights blocks_out_neighbors = finetune::block_edge_weights(B.block_assignment(), out_edges);
     EdgeWeights blocks_in_neighbors = finetune::block_edge_weights(B.block_assignment(), in_edges);
     double hastings2 = entropy::hastings_correction(B, blocks_out_neighbors, blocks_in_neighbors, Proposal, Updates,
@@ -180,8 +180,8 @@ TEST_F(EntropyTest, HastingsCorrectionWithAndWithoutDeltaGivesSameResult) {
 TEST_F(EntropyTest, SpecialCaseShouldGiveCorrectDeltaMDL) {
     long vertex = 6;
     utils::ProposalAndEdgeCounts proposal{0, 1, 2, 3};
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex, false);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex, true);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex, false);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex, true);
     SparseEdgeCountUpdates updates;
     finetune::edge_count_updates_sparse(B3, vertex, 3, 0, out_edges, in_edges, updates);
     common::NewBlockDegrees new_block_degrees = common::compute_new_block_degrees(
@@ -344,8 +344,8 @@ TEST_F(EntropyDenseTest, HastingsCorrectionBlockCountsAreTheSameWithAndWithoutBl
         block_counts1[neighbor_block] += 1;
     }
     utils::print(block_counts1);
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex);
     EdgeWeights blocks_out_neighbors = finetune::block_edge_weights(B.block_assignment(), out_edges);
     EdgeWeights blocks_in_neighbors = finetune::block_edge_weights(B.block_assignment(), in_edges);
     MapVector<long> block_counts2;
@@ -372,8 +372,8 @@ TEST_F(EntropyDenseTest, HastingsCorrectionWithAndWithoutDeltaGivesSameResult) {
     long vertex = 7;
     long current_block = B.block_assignment(vertex);
     double hastings1 = entropy::hastings_correction(vertex, graph, B, Deltas, current_block, Proposal);
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex);
     EdgeWeights blocks_out_neighbors = finetune::block_edge_weights(B.block_assignment(), out_edges);
     EdgeWeights blocks_in_neighbors = finetune::block_edge_weights(B.block_assignment(), in_edges);
     double hastings2 = entropy::hastings_correction(B, blocks_out_neighbors, blocks_in_neighbors, Proposal, Updates,
@@ -384,8 +384,8 @@ TEST_F(EntropyDenseTest, HastingsCorrectionWithAndWithoutDeltaGivesSameResult) {
 TEST_F(EntropyDenseTest, SpecialCaseShouldGiveCorrectDeltaMDL) {
     long vertex = 6;
     utils::ProposalAndEdgeCounts proposal{0, 1, 2, 3};
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex, false);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex, true);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex, false);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex, true);
     SparseEdgeCountUpdates updates;
     finetune::edge_count_updates_sparse(B3, vertex, 3, 0, out_edges, in_edges, updates);
     common::NewBlockDegrees new_block_degrees = common::compute_new_block_degrees(

@@ -129,6 +129,7 @@ void extract_subgraph(const Graph &graph, const Blockmodel &blockmodel, Graph &s
             subgraph.add_edge(translator[vertex], translator[neighbor]);
         }
     }
+    subgraph.build_csr();
 //    return split;
 }
 
@@ -160,6 +161,7 @@ Split propose_split(long cluster, const Graph &graph, const Blockmodel &blockmod
             subgraph.add_edge(split.translator[vertex], split.translator[neighbor]);
         }
     }
+    subgraph.build_csr();
     if (args.split == "random")
         split_assignment = propose_random_split(subgraph);
     else if (args.split == "connectivity-snowball")

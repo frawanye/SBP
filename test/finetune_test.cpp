@@ -3,7 +3,7 @@
 #include <gtest/gtest.h>
 
 #include "blockmodel.hpp"
-#include "blockmodel/sparse/delta.hpp"
+#include "matrix/delta.hpp"
 #include "finetune.hpp"
 #include "graph.hpp"
 #include "globals.hpp"
@@ -47,16 +47,16 @@ protected:
 
 TEST_F(FinetuneTest, SetUpWorksCorrectly) {
     EXPECT_EQ(graph.num_vertices(), 11);
-    EXPECT_EQ(graph.out_neighbors().size(), graph.num_vertices());
-    EXPECT_EQ(graph.out_neighbors().size(), graph.in_neighbors().size());
+    EXPECT_EQ((long)graph.num_vertices(), graph.num_vertices());
+    EXPECT_EQ(graph.num_vertices(), graph.num_vertices());
     EXPECT_EQ(graph.num_edges(), 23);
 }
 
 TEST_F(FinetuneTest, SparseEdgeCountUpdatesAreCorrect) {
     long vertex = 7;
     long current_block = B.block_assignment(vertex);
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex, false);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex, true);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex, false);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex, true);
     EdgeWeights blocks_out_neighbors = finetune::block_edge_weights(B.block_assignment(), out_edges);
     EdgeWeights blocks_in_neighbors = finetune::block_edge_weights(B.block_assignment(), in_edges);
     SparseEdgeCountUpdates updates;
@@ -77,8 +77,8 @@ TEST_F(FinetuneTest, SparseEdgeCountUpdatesAreCorrect) {
 TEST_F(FinetuneTest, SparseEdgeCountUpdatesWithSelfEdgesAreCorrect) {
     long vertex = 5;
     long current_block = B.block_assignment(vertex);
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex, false);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex, true);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex, false);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex, true);
     EdgeWeights blocks_out_neighbors = finetune::block_edge_weights(B.block_assignment(), out_edges);
     EdgeWeights blocks_in_neighbors = finetune::block_edge_weights(B.block_assignment(), in_edges);
     SparseEdgeCountUpdates updates;
@@ -99,8 +99,8 @@ TEST_F(FinetuneTest, SparseEdgeCountUpdatesWithSelfEdgesAreCorrect) {
 TEST_F(FinetuneTest, BlockmodelDeltasAreCorrect) {
     long vertex = 7;
     long current_block = B.block_assignment(vertex);
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex, false);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex, false);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex, false);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex, false);
     Delta delta = finetune::blockmodel_delta(vertex, current_block, Proposal.proposal, out_edges, in_edges, B);
     EXPECT_EQ(delta.entries().size(), 6) << "blockmodel deltas are the wrong size. Expected 6 but got " << delta.entries().size();
     EXPECT_EQ(delta.get(0,0), 1);
@@ -117,8 +117,8 @@ TEST_F(FinetuneTest, BlockmodelDeltasAreCorrect) {
 TEST_F(FinetuneTest, BlockmodelDeltasShouldSumUpToZero) {
     long vertex = 7;
     long current_block = B.block_assignment(vertex);
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex, false);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex, false);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex, false);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex, false);
     Delta delta = finetune::blockmodel_delta(vertex, current_block, Proposal.proposal, out_edges, in_edges, B);
     long sum = 0;
     for (const auto &entry : delta.entries()) {
@@ -127,8 +127,8 @@ TEST_F(FinetuneTest, BlockmodelDeltasShouldSumUpToZero) {
     EXPECT_EQ(sum, 0);
     vertex = 10;  // has a self-edge
     current_block = B.block_assignment(vertex);
-    out_edges = finetune::edge_weights(graph.out_neighbors(), vertex, false);
-    in_edges = finetune::edge_weights(graph.in_neighbors(), vertex, false);
+    out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex, false);
+    in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex, false);
     delta = finetune::blockmodel_delta(vertex, current_block, Proposal.proposal, out_edges, in_edges, B);
     sum = 0;
     for (const auto &entry : delta.entries()) {
@@ -140,8 +140,8 @@ TEST_F(FinetuneTest, BlockmodelDeltasShouldSumUpToZero) {
 TEST_F(FinetuneTest, BlockmodelDeltaGivesSameBlockmatrixAsEdgeCountUpdates) {
     long vertex = 7;
     long current_block = B.block_assignment(vertex);
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex);
     B.print_blockmatrix();
     Blockmodel B1 = B.copy();
     B1.move_vertex(V7, current_block, Proposal.proposal, Updates, new_block_degrees.block_degrees_out,
@@ -176,8 +176,8 @@ TEST_F(FinetuneTest, HastingsCorrectionBlockCountsAreTheSameWithAndWithoutBlockm
         block_counts1[neighbor_block] += 1;
     }
     utils::print(block_counts1);
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex);
     EdgeWeights blocks_out_neighbors = finetune::block_edge_weights(B.block_assignment(), out_edges);
     EdgeWeights blocks_in_neighbors = finetune::block_edge_weights(B.block_assignment(), in_edges);
     MapVector<long> block_counts2;
@@ -204,8 +204,8 @@ TEST_F(FinetuneTest, HastingsCorrectionBlockCountsAreTheSameWithAndWithoutBlockm
 TEST_F(FinetuneTest, SpecialCaseGivesCorrectSparseEdgeCountUpdates) {
     long vertex = 6;
     long current_block = B3.block_assignment(vertex);
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex, false);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex, true);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex, false);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex, true);
     SparseEdgeCountUpdates updates;
     finetune::edge_count_updates_sparse(B3, vertex, current_block, 0, out_edges, in_edges, updates);
     EXPECT_EQ(updates.block_row[0], 1);
@@ -237,8 +237,8 @@ TEST_F(FinetuneTest, SpecialCaseGivesCorrectSparseEdgeCountUpdates) {
 TEST_F(FinetuneTest, SpecialCaseBlockmodelDeltasAreCorrect) {
     long vertex = 6;
     utils::ProposalAndEdgeCounts proposal {0, 1, 2, 3 };
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex, false);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex, true);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex, false);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex, true);
     Delta delta = finetune::blockmodel_delta(vertex, 3, proposal.proposal, out_edges, in_edges, B3);
     EXPECT_EQ(delta.entries().size(), 6);
     EXPECT_EQ(delta.get(0,2), 1);
@@ -254,8 +254,8 @@ TEST_F(FinetuneTest, SpecialCaseBlockmodelDeltasAreCorrect) {
 TEST_F(FinetuneDenseTest, SparseEdgeCountUpdatesAreCorrect) {
     long vertex = 7;
     long current_block = B.block_assignment(vertex);
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex, false);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex, true);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex, false);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex, true);
     EdgeWeights blocks_out_neighbors = finetune::block_edge_weights(B.block_assignment(), out_edges);
     EdgeWeights blocks_in_neighbors = finetune::block_edge_weights(B.block_assignment(), in_edges);
     SparseEdgeCountUpdates updates;
@@ -276,8 +276,8 @@ TEST_F(FinetuneDenseTest, SparseEdgeCountUpdatesAreCorrect) {
 TEST_F(FinetuneDenseTest, SparseEdgeCountUpdatesWithSelfEdgesAreCorrect) {
     long vertex = 5;
     long current_block = B.block_assignment(vertex);
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex, false);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex, true);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex, false);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex, true);
     EdgeWeights blocks_out_neighbors = finetune::block_edge_weights(B.block_assignment(), out_edges);
     EdgeWeights blocks_in_neighbors = finetune::block_edge_weights(B.block_assignment(), in_edges);
     SparseEdgeCountUpdates updates;
@@ -297,8 +297,8 @@ TEST_F(FinetuneDenseTest, SparseEdgeCountUpdatesWithSelfEdgesAreCorrect) {
 TEST_F(FinetuneDenseTest, BlockmodelDeltasAreCorrect) {
     long vertex = 7;
     long current_block = B.block_assignment(vertex);
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex, false);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex, false);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex, false);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex, false);
     Delta delta = finetune::blockmodel_delta(vertex, current_block, Proposal.proposal, out_edges, in_edges, B);
     EXPECT_EQ(delta.entries().size(), 6) << "blockmodel deltas are the wrong size. Expected 6 but got " << delta.entries().size();
     EXPECT_EQ(delta.get(0,0), 1);
@@ -314,8 +314,8 @@ TEST_F(FinetuneDenseTest, BlockmodelDeltasAreCorrect) {
 TEST_F(FinetuneDenseTest, BlockmodelDeltasShouldSumUpToZero) {
     long vertex = 7;
     long current_block = B.block_assignment(vertex);
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex, false);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex, false);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex, false);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex, false);
     Delta delta = finetune::blockmodel_delta(vertex, current_block, Proposal.proposal, out_edges, in_edges, B);
     long sum = 0;
     for (const auto &entry : delta.entries()) {
@@ -324,8 +324,8 @@ TEST_F(FinetuneDenseTest, BlockmodelDeltasShouldSumUpToZero) {
     EXPECT_EQ(sum, 0);
     vertex = 10;  // has a self-edge
     current_block = B.block_assignment(vertex);
-    out_edges = finetune::edge_weights(graph.out_neighbors(), vertex, false);
-    in_edges = finetune::edge_weights(graph.in_neighbors(), vertex, false);
+    out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex, false);
+    in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex, false);
     delta = finetune::blockmodel_delta(vertex, current_block, Proposal.proposal, out_edges, in_edges, B);
     sum = 0;
     for (const auto &entry : delta.entries()) {
@@ -337,8 +337,8 @@ TEST_F(FinetuneDenseTest, BlockmodelDeltasShouldSumUpToZero) {
 TEST_F(FinetuneDenseTest, BlockmodelDeltaGivesSameBlockmatrixAsEdgeCountUpdates) {
     long vertex = 7;
     long current_block = B.block_assignment(vertex);
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex);
     B.print_blockmatrix();
     Blockmodel B1 = B.copy();
     B1.move_vertex(V7, current_block, Proposal.proposal, Updates, new_block_degrees.block_degrees_out,
@@ -372,8 +372,8 @@ TEST_F(FinetuneDenseTest, HastingsCorrectionBlockCountsAreTheSameWithAndWithoutB
         block_counts1[neighbor_block] += 1;
     }
     utils::print(block_counts1);
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex);
     EdgeWeights blocks_out_neighbors = finetune::block_edge_weights(B.block_assignment(), out_edges);
     EdgeWeights blocks_in_neighbors = finetune::block_edge_weights(B.block_assignment(), in_edges);
     MapVector<long> block_counts2;
@@ -399,8 +399,8 @@ TEST_F(FinetuneDenseTest, HastingsCorrectionBlockCountsAreTheSameWithAndWithoutB
 TEST_F(FinetuneDenseTest, SpecialCaseGivesCorrectSparseEdgeCountUpdates) {
     long vertex = 6;
     long current_block = B3.block_assignment(vertex);
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex, false);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex, true);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex, false);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex, true);
     SparseEdgeCountUpdates updates;
     finetune::edge_count_updates_sparse(B3, vertex, current_block, 0, out_edges, in_edges, updates);
     EXPECT_EQ(updates.block_row[0], 1);
@@ -432,8 +432,8 @@ TEST_F(FinetuneDenseTest, SpecialCaseGivesCorrectSparseEdgeCountUpdates) {
 TEST_F(FinetuneDenseTest, SpecialCaseBlockmodelDeltasAreCorrect) {
     long vertex = 6;
     utils::ProposalAndEdgeCounts proposal {0, 1, 2, 3 };
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex, false);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex, true);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex, false);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex, true);
     Delta delta = finetune::blockmodel_delta(vertex, 3, proposal.proposal, out_edges, in_edges, B3);
     EXPECT_EQ(delta.entries().size(), 6);
     EXPECT_EQ(delta.get(0,2), 1);

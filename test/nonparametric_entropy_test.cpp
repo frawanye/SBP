@@ -3,7 +3,7 @@
 #include <gtest/gtest.h>
 
 #include "blockmodel.hpp"
-#include "blockmodel/sparse/delta.hpp"
+#include "matrix/delta.hpp"
 #include "entropy.hpp"
 #include "finetune.hpp"
 #include "graph.hpp"
@@ -68,8 +68,8 @@ class NonparametricBlockMergeEntropyDenseTest : public BlockMergeTest {
 
 TEST_F(NonparametricEntropyTest, SetUpWorksCorrectly) {
     EXPECT_EQ(graph.num_vertices(), 11);
-    EXPECT_EQ(graph.out_neighbors().size(), graph.num_vertices());
-    EXPECT_EQ(graph.out_neighbors().size(), graph.in_neighbors().size());
+    EXPECT_EQ((long)graph.num_vertices(), graph.num_vertices());
+    EXPECT_EQ(graph.num_vertices(), graph.num_vertices());
     EXPECT_EQ(graph.num_edges(), 23);
 }
 
@@ -156,8 +156,8 @@ TEST_F(NonparametricEntropyTest, DeltaMDLUsingBlockmodelDeltasGivesCorrectAnswer
 //        block_counts1[neighbor_block] += 1;
 //    }
 //    utils::print(block_counts1);
-//    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex);
-//    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex);
+//    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex);
+//    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex);
 //    EdgeWeights blocks_out_neighbors = finetune::block_edge_weights(B.block_assignment(), out_edges);
 //    EdgeWeights blocks_in_neighbors = finetune::block_edge_weights(B.block_assignment(), in_edges);
 //    MapVector<long> block_counts2;
@@ -185,8 +185,8 @@ TEST_F(NonparametricEntropyTest, DeltaMDLUsingBlockmodelDeltasGivesCorrectAnswer
 //    long vertex = 7;
 //    long current_block = B.block_assignment(vertex);
 //    double hastings1 = entropy::hastings_correction(vertex, graph, B, Deltas, current_block, Proposal);
-//    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex);
-//    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex);
+//    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex);
+//    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex);
 //    EdgeWeights blocks_out_neighbors = finetune::block_edge_weights(B.block_assignment(), out_edges);
 //    EdgeWeights blocks_in_neighbors = finetune::block_edge_weights(B.block_assignment(), in_edges);
 //    double hastings2 = entropy::hastings_correction(B, blocks_out_neighbors, blocks_in_neighbors, Proposal, Updates,
@@ -197,8 +197,8 @@ TEST_F(NonparametricEntropyTest, DeltaMDLUsingBlockmodelDeltasGivesCorrectAnswer
 TEST_F(NonparametricEntropyTest, SpecialCaseShouldGiveCorrectDeltaMDL) {
     long vertex = 6;
     utils::ProposalAndEdgeCounts proposal{0, 1, 2, 3};
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex, false);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex, true);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex, false);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex, true);
     SparseEdgeCountUpdates updates;
     Delta deltas = finetune::blockmodel_delta(6, 3, 0, out_edges, in_edges, B3);
 //    finetune::edge_count_updates_sparse(B3, vertex, 3, 0, out_edges, in_edges, updates);
@@ -357,8 +357,8 @@ TEST_F(NonparametricEntropyDenseTest, DeltaMDLUsingBlockmodelDeltasGivesCorrectA
 TEST_F(NonparametricEntropyDenseTest, SpecialCaseShouldGiveCorrectDeltaMDL) {
     long vertex = 6;
     utils::ProposalAndEdgeCounts proposal{0, 1, 2, 3};
-    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(), vertex, false);
-    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(), vertex, true);
+    EdgeWeights out_edges = finetune::edge_weights(graph.out_neighbors(vertex), vertex, false);
+    EdgeWeights in_edges = finetune::edge_weights(graph.in_neighbors(vertex), vertex, true);
     SparseEdgeCountUpdates updates;
     Delta deltas = finetune::blockmodel_delta(6, 3, 0, out_edges, in_edges, B3);
     std::cout << "before copies" << std::endl;

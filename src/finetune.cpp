@@ -416,12 +416,11 @@ void edge_count_updates_sparse(const Blockmodel &blockmodel, long vertex, long c
     }
 }
 
-EdgeWeights edge_weights(const NeighborList &neighbors, long vertex, bool ignore_self) {
+EdgeWeights edge_weights(const NeighborView &neighbors, long vertex, bool ignore_self) {
     std::vector<long> indices;
     std::vector<long> values;
     // Assumes graph is unweighted
-    const std::vector<long> &neighbor_vector = neighbors[vertex];
-    for (const long neighbor: neighbor_vector) {
+    for (const long neighbor : neighbors) {
         if (ignore_self && neighbor == vertex) continue;
         indices.push_back(neighbor);
         values.push_back(1);
@@ -845,8 +844,8 @@ VertexMove propose_move(Blockmodel &blockmodel, long vertex, const Graph &graph)
     if (blockmodel.block_size(current_block) == 1) {
         return VertexMove{std::numeric_limits<double>::max(), did_move, -1, -1 };
     }
-    EdgeWeights out_edges = edge_weights(graph.out_neighbors(), vertex, false);
-    EdgeWeights in_edges = edge_weights(graph.in_neighbors(), vertex, true);
+    EdgeWeights out_edges = edge_weights(graph.out_neighbors(vertex), vertex, false);
+    EdgeWeights in_edges = edge_weights(graph.in_neighbors(vertex), vertex, true);
 
     MapVector<long> neighbor_blocks;
     for (long neighbor : out_edges.indices) {
@@ -877,8 +876,8 @@ VertexMove_v3 propose_gibbs_move_v3(const Blockmodel &blockmodel, long vertex, c
 //        return VertexMove_v3{ 0.0, did_move, InvalidVertex, -1 };
 //    }
 
-    EdgeWeights out_edges = edge_weights(graph.out_neighbors(), vertex, false);
-    EdgeWeights in_edges = edge_weights(graph.in_neighbors(), vertex, true);
+    EdgeWeights out_edges = edge_weights(graph.out_neighbors(vertex), vertex, false);
+    EdgeWeights in_edges = edge_weights(graph.in_neighbors(vertex), vertex, true);
 
     MapVector<long> neighbor_blocks;
     for (long neighbor : out_edges.indices) {

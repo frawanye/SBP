@@ -1,6 +1,89 @@
 # SBP Change Log
 
+---
+
+## 2026-06-10 — Add `--csrgraph` flag: both CSR and neighbor-list adjacency available at runtime
+
+### Summary
+Added a boolean `--csrgraph` command-line switch so a single binary can benchmark either the CSR adjacency backend or the original neighbor-list (vector-of-vectors) adjacency. When `--csrgraph` is absent (the new default), the graph stores adjacency as `NeighborList _out_staging/_in_staging` and never builds the CSR. When `--csrgraph` is passed, behavior is identical to the previous default (build CSR, free staging).
+
+All ~100 per-vertex call sites (`finetune.cpp`, `entropy.cpp`, `sample.cpp`, `top_down_sbp.cpp`, `partition.cpp`, tests, etc.) are unchanged — they consume `NeighborView` from `out_neighbors(v)`/`in_neighbors(v)` regardless of backend.
+
+The distributed 2-hop blockmodel code was also refactored: `build_two_hop_blockmodel`, `distribute_2hop_round_robin`, `distribute_2hop_size_balanced`, and `distribute_2hop_snowball` now take `const Graph&` instead of `const CSR&`, making all six distribution schemes work in both modes.
+
+### Files changed
+- `include/args.hpp` — added `bool csrgraph` member; added `TCLAP::SwitchArg --csrgraph` (default `false`/neighbor-list)
+- `include/graph.hpp` — `out_neighbors(v)`/`in_neighbors(v)` branch on `args.csrgraph` (CSR path or staging path); added `#include "globals.hpp"` for `args` extern
+- `src/graph.cpp` — `build_csr()` returns early if `!args.csrgraph`; `degree()`/`degrees()` branch on `args.csrgraph` to use staging sizes in NL mode
+- `include/distributed/two_hop_blockmodel.hpp` — changed 4 method signatures from `const CSR&` to `const Graph&`
+- `src/distributed/two_hop_blockmodel.cpp` — updated implementations to use `graph.num_vertices()` and `graph.out_neighbors(v)` instead of `out_csr.num_rows()` and `out_csr.neighbors(v)`
+
+---
+
+## 2026-06-05 — Convert `Graph` adjacency to CSR; add `NeighborView`
+
+### Summary
+Converted the `Graph` class's internal adjacency storage from `NeighborList` (vectors of vectors) to a new `CSR` class (`include/matrix/csr.hpp`), providing GPU-mappable contiguous arrays (`row_ptrs`, `col_indices`, `vals`) suitable for future `omp target map` on MI300A.
+
+Key design decisions:
+- `include/matrix/gpu_csr.hpp` (the old, incomplete stub) was renamed to `include/matrix/csr.hpp` and the class was renamed from `CSRMatrix` to `CSR`; include guard is now `SBP_MATRIX_CSR_HPP`.
+- `CSR` stores three `std::vector<long>` members: `row_ptrs` (V+1), `col_indices` (E), and `vals` (E, filled with `1` for unweighted graphs). `vals` is retained for future weighted-edge support.
+- A new `NeighborView` struct (added to `include/typedefs.hpp`) provides a non-owning span (`const long* ptr; long len`) with `begin()/end()/size()/operator[]/empty()/to_vector()`. This replaces `const std::vector<long>&` at per-vertex accessor call sites.
+- `Graph` retains staging `NeighborList _out_staging/_in_staging` for incremental construction (`add_edge`). CSR is built at the end of `sort_vertices()` and exposed via `out_csr()`/`in_csr()` for GPU use.
+- The whole-list `out_neighbors()`/`in_neighbors()` accessors (returning `const NeighborList&`) were removed; per-vertex `out_neighbors(v)`/`in_neighbors(v)` now return `NeighborView`.
+
+### Files changed
+- `include/matrix/gpu_csr.hpp` → deleted; replaced by `include/matrix/csr.hpp` (new `CSR` class)
+- `include/typedefs.hpp` — added `NeighborView` struct
+- `include/graph.hpp` — removed whole-list accessors; added `out_csr()`/`in_csr()`; added `_csr_ready`, `CSR _out_csr/_in_csr`, renamed staging members
+- `src/graph.cpp` — build CSR at end of `sort_vertices()`; `degree`/`degrees` use CSR when ready; staged-only helpers unchanged
+- `include/gpu.hpp` — updated include from `matrix/gpu_csr.hpp` to `matrix/csr.hpp`
+- `include/distributed/two_hop_blockmodel.hpp` — changed `distribute_2hop_*` and `build_two_hop_blockmodel` signatures from `const NeighborList&` to `const CSR&`
+- `src/distributed/two_hop_blockmodel.cpp` — callers now pass `graph.out_csr()`; implementations iterate via `out_csr.neighbors(v)` and `out_csr.num_rows()`
+- `src/partition.cpp` — replaced `graph.out_neighbors().size()` with `graph.num_vertices()`
+- `src/blockmodel/blockmodel.cpp` — vector-copy site uses `.to_vector()`
+- `src/sample.cpp` — binds to `NeighborView` instead of `const std::vector<long>&`
+- `include/finetune.hpp` + `src/finetune.cpp` — `edge_weights` signature changed from `const NeighborList&` to `const NeighborView&`; callers pass `graph.out_neighbors(v)` directly
+- `src/distributed/dist_finetune.cpp` — same `edge_weights` call-site updates
+- `test/finetune_test.cpp`, `test/entropy_test.cpp`, `test/nonparametric_entropy_test.cpp`, `test/sample_test.cpp` — updated to new API
+
+### Test results
+113/117 tests pass. The 4 failures are pre-existing (same as before this change):
+- `NonparametricEntropyTest.DegreeCorrectedMDLGivesCorrectAnswer`
+- `NonparametricEntropyTest.DegreeCorrectedDegreeDLGivesCorrectAnswer`
+- `NonparametricEntropyDenseTest.DegreeCorrectedMDLGivesCorrectAnswer`
+- `NonparametricEntropyDenseTest.DegreeCorrectedDegreeDLGivesCorrectAnswer`
+
 This file documents changes made to the SBP codebase during interactive AI-assisted development sessions.
+
+---
+
+## 2026-06-05 — Move matrix headers/sources from `blockmodel/sparse/` to `matrix/`
+
+### Summary
+Relocated all matrix class headers and sources from `include/blockmodel/sparse/` and `src/blockmodel/sparse/` into new `include/matrix/` and `src/matrix/` directories. This is the first of two steps toward converting the graph's adjacency storage to CSR format for future OpenMP GPU offloading on MI300A.
+
+No logic was changed; this is a pure reorganization. All 113/117 tests pass (the 4 failures are pre-existing: `NonparametricEntropyTest` and `NonparametricEntropyDenseTest` degree-corrected variants, the latter added after the `.cursorrules` baseline was written).
+
+### Files moved
+- `include/blockmodel/sparse/{csparse_matrix,dense_matrix,dict_matrix,dict_transpose_matrix,boost_mapped_matrix,gpu_csr,delta,vertex_level_delta}.hpp` → `include/matrix/`
+- `src/blockmodel/sparse/{dense_matrix,dict_matrix,dict_transpose_matrix,boost_mapped_matrix,pointer_delta}.cpp` → `src/matrix/`
+
+### Path fixes applied
+- `../../utils.hpp` → `../utils.hpp` in `dense_matrix.hpp`, `dict_matrix.hpp`, `dict_transpose_matrix.hpp`, `boost_mapped_matrix.hpp`
+- Fixed duplicate include guard: `gpu_csr.hpp` had the same guard (`SBP_BLOCKMODEL_SPARSE_CSR_MATRIX_HPP`) as `include/gpu.hpp`; `gpu_csr.hpp` now uses `SBP_MATRIX_GPU_CSR_HPP`, `gpu.hpp` uses `SBP_GPU_HPP`.
+- `pointer_delta.cpp`: `blockmodel/sparse/vertex_level_delta.hpp` → `matrix/vertex_level_delta.hpp`
+
+### Include updates in consuming files
+All `#include "blockmodel/sparse/X.hpp"` and `#include "sparse/X.hpp"` references updated to `#include "matrix/X.hpp"` in:
+- `include/blockmodel/blockmodel.hpp`
+- `include/distributed/two_hop_blockmodel.hpp`
+- `include/finetune.hpp`, `include/common.hpp`, `include/block_merge.hpp`
+- `include/gpu.hpp`
+- `test/dense_matrix_test.cpp`, `test/finetune_test.cpp`, `test/entropy_test.cpp`, `test/nonparametric_entropy_test.cpp`, `test/block_merge_test.cpp`
+
+### Build system
+- `CMakeLists.txt`: `include/blockmodel/sparse` → `include/matrix` in `INCLUDE_DIRS`; `src/blockmodel/sparse/*.cpp` → `src/matrix/*.cpp` for the three compiled matrix sources.
 
 ---
 

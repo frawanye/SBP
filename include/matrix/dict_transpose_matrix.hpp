@@ -11,7 +11,7 @@
 // TODO: figure out where to put utils.hpp so this never happens
 #include "delta.hpp"
 #include "typedefs.hpp"
-#include "../../utils.hpp"
+#include "../utils.hpp"
 
 // #include <Eigen/Core>
 

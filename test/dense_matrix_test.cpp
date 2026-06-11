@@ -3,7 +3,7 @@
 #include <gtest/gtest.h>
 
 #include "blockmodel.hpp"
-#include "sparse/dense_matrix.hpp"
+#include "matrix/dense_matrix.hpp"
 
 #include "toy_example.hpp"
 

@@ -145,7 +145,11 @@ The code expects graph files in one of these formats:
 
 #### Matrix Storage
 
-- `--no_transpose` - Disable transpose matrix storage (saves memory, slower column access)
+- `--matrix_type <type>` - Blockmodel matrix storage backend (default: `sparse_transpose`):
+  - `sparse_transpose`: Stores matrix and transpose for fast column access (default, recommended)
+  - `sparse`: Basic sparse matrix using hash maps
+  - `dense`: Dense 2D storage, better cache locality for graphs with many inter-block edges
+- `--csrgraph` - Use CSR (Compressed Sparse Row) format for graph adjacency storage. When omitted (default), the original neighbor-list (vector-of-vectors) format is used. The two formats produce identical results; CSR is slightly faster for some workloads and is GPU-mappable for future offloading.
 
 #### Vertex Processing
 

@@ -13,7 +13,7 @@
 #include "graph.hpp"
 #include "blockmodel/blockmodel.hpp"
 #include "blockmodel/blockmodel_triplet.hpp"
-#include "blockmodel/sparse/delta.hpp"
+#include "matrix/delta.hpp"
 #include "globals.hpp"
 #include "utils.hpp"
 #include "typedefs.hpp"
@@ -70,7 +70,7 @@ void edge_count_updates_sparse(const Blockmodel &blockmodel, long vertex, long c
 
 /// Returns the edge weights in `neighbors[vertex]` as an `EdgeWeights` struct. If `ignore_self` is `true`, then
 /// self-edges will not be added to EdgeWeights.
-EdgeWeights edge_weights(const NeighborList &neighbors, long vertex, bool ignore_self = false);
+EdgeWeights edge_weights(const NeighborView &neighbors, long vertex, bool ignore_self = false);
 
 /// Evaluates a potential move of `vertex` from `current_block` to `proposal.proposal` using MCMC logic.
 VertexMove eval_vertex_move(long vertex, long current_block, utils::ProposalAndEdgeCounts proposal,
