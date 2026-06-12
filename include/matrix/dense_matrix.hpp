@@ -4,11 +4,41 @@
 #ifndef CPPSBP_PARTITION_DENSE_MATRIX_HPP
 #define CPPSBP_PARTITION_DENSE_MATRIX_HPP
 
+#include <omp.h>
 #include <vector>
 
 #include "csparse_matrix.hpp"
 #include "delta.hpp"
 #include "../utils.hpp"
+
+#pragma omp begin declare target
+/**
+ * Used to access a DenseMatrix on the GPU.
+ */
+struct DenseMatrixView {
+  const long* data;
+  long nrows;
+  long ncols;
+  long get(long row, long col) const {
+    return data[row * ncols + col];
+  };
+  /// Populates the values in `result` with the weighted neighbors of `block`.
+  /// Assumptions: result is already initialized to 0 and is of size max(nrows, ncols),
+  /// and blocks < max(nrows, ncols).
+  void neighbors_weights(long* result, long block) const {
+    // Outgoing edges
+    for (long col = 0; col < this->ncols; ++col) {
+        long value = this->data[block * this->ncols + col];
+        result[col] += value;
+    }
+    // Incoming edges
+    for (long row = 0; row < this->nrows; ++row) {
+        long value = this->data[row * this->ncols + block];
+        result[row] += value * (long)(row != block);  // skips diagonals by multiplying by 0 if row == block
+    }
+  }
+};
+#pragma omp end declare target
 
 /**
  * Dense matrix implementation for blockmodel storage.
@@ -21,7 +51,7 @@ class DenseMatrix : public ISparseMatrix {
     DenseMatrix(long nrows, long ncols) {
         this->ncols = ncols;
         this->nrows = nrows;
-        this->matrix = std::vector<std::vector<long>>(this->nrows, std::vector<long>(this->ncols, 0));
+        this->matrix = std::vector<long>(this->nrows * this->ncols, 0);
         this->shape = std::make_pair(this->nrows, this->ncols);
     }
     void add(long row, long col, long val) override;
@@ -39,6 +69,10 @@ class DenseMatrix : public ISparseMatrix {
     MapVector<long> getrow_sparse(long row) const override;
     void getrow_sparse(long row, MapVector<long> &row_vector) const override;
     const MapVector<long>& getrow_sparseref(long row) const override;
+    /// Exposes a GPU-friendly view of the DenseMatrix.
+    DenseMatrixView gpu_view() const {
+      return DenseMatrixView{this->matrix.data(), this->nrows, this->ncols};
+    }
     EdgeWeights incoming_edges(long block) const override;
     std::set<long> neighbors(long block) const override;
     MapVector<long> neighbors_weights(long block) const override;
@@ -62,7 +96,7 @@ class DenseMatrix : public ISparseMatrix {
     std::vector<long> values() const override;
 
   private:
-    std::vector<std::vector<long>> matrix;
+    std::vector<long> matrix;
     // Ring buffer of 4 slots so concurrent sparseref callers (e.g. the 4 in
     // delta_mdl) each get a stable reference rather than all sharing one vector.
     static constexpr size_t SPARSEREF_SLOTS = 4;

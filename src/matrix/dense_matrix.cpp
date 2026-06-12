@@ -3,20 +3,20 @@
 void DenseMatrix::add(long row, long col, long val) {
     check_row_bounds(row);
     check_col_bounds(col);
-    this->matrix[row][col] += val;
+    this->matrix[row * this->ncols + col] += val;
 }
 
 void DenseMatrix::clearrow(long row) {
     check_row_bounds(row);
     for (long col = 0; col < this->ncols; ++col) {
-        this->matrix[row][col] = 0;
+        this->matrix[row * this->ncols + col] = 0;
     }
 }
 
 void DenseMatrix::clearcol(long col) {
     check_col_bounds(col);
     for (long row = 0; row < this->nrows; ++row) {
-        this->matrix[row][col] = 0;
+        this->matrix[row * this->ncols + col] = 0;
     }
 }
 
@@ -24,7 +24,7 @@ ISparseMatrix* DenseMatrix::copy() const {
     DenseMatrix* dense_matrix = new DenseMatrix(this->nrows, this->ncols);
     for (long row = 0; row < this->nrows; ++row) {
         for (long col = 0; col < this->ncols; ++col) {
-            dense_matrix->matrix[row][col] = this->matrix[row][col];
+            dense_matrix->matrix[row * this->ncols + col] = this->matrix[row * this->ncols + col];
         }
     }
     return dense_matrix;
@@ -36,13 +36,13 @@ long DenseMatrix::distinct_edges(long block) const {
     long result = 0;
     // Count non-zero entries in row (outgoing edges)
     for (long col = 0; col < this->ncols; ++col) {
-        if (this->matrix[block][col] != 0) {
+        if (this->matrix[block * this->ncols + col] != 0) {
             result++;
         }
     }
     // Count non-zero entries in column (incoming edges), excluding self-edge
     for (long row = 0; row < this->nrows; ++row) {
-        if (row != block && this->matrix[row][block] != 0) {
+        if (row != block && this->matrix[row * this->ncols + block] != 0) {
             result++;
         }
     }
@@ -53,7 +53,7 @@ std::vector<std::tuple<long, long, long>> DenseMatrix::entries() const {
     std::vector<std::tuple<long, long, long>> result;
     for (long row = 0; row < this->nrows; ++row) {
         for (long col = 0; col < this->ncols; ++col) {
-            long value = this->matrix[row][col];
+            long value = this->matrix[row * this->ncols + col];
             if (value != 0) {
                 result.emplace_back(row, col, value);
             }
@@ -65,14 +65,14 @@ std::vector<std::tuple<long, long, long>> DenseMatrix::entries() const {
 long DenseMatrix::get(long row, long col) const {
     check_row_bounds(row);
     check_col_bounds(col);
-    return this->matrix[row][col];
+    return this->matrix[row * this->ncols + col];
 }
 
 std::vector<long> DenseMatrix::getcol(long col) const {
     check_col_bounds(col);
     std::vector<long> col_values(this->nrows);
     for (long row = 0; row < this->nrows; ++row) {
-        col_values[row] = this->matrix[row][col];
+        col_values[row] = this->matrix[row * this->ncols + col];
     }
     return col_values;
 }
@@ -81,7 +81,7 @@ MapVector<long> DenseMatrix::getcol_sparse(long col) const {
     check_col_bounds(col);
     MapVector<long> col_vector;
     for (long row = 0; row < this->nrows; ++row) {
-        long value = this->matrix[row][col];
+        long value = this->matrix[row * this->ncols + col];
         if (value != 0) {
             col_vector[row] = value;
         }
@@ -95,7 +95,7 @@ const MapVector<long>& DenseMatrix::getcol_sparseref(long col) const {
     ++temp_vector_idx;
     slot.clear();
     for (long row = 0; row < this->nrows; ++row) {
-        long value = this->matrix[row][col];
+        long value = this->matrix[row * this->ncols + col];
         if (value != 0) {
             slot[row] = value;
         }
@@ -107,7 +107,7 @@ void DenseMatrix::getcol_sparse(long col, MapVector<long> &col_vector) const {
     check_col_bounds(col);
     col_vector.clear();
     for (long row = 0; row < this->nrows; ++row) {
-        long value = this->matrix[row][col];
+        long value = this->matrix[row * this->ncols + col];
         if (value != 0) {
             col_vector[row] = value;
         }
@@ -116,14 +116,18 @@ void DenseMatrix::getcol_sparse(long col, MapVector<long> &col_vector) const {
 
 std::vector<long> DenseMatrix::getrow(long row) const {
     check_row_bounds(row);
-    return this->matrix[row];
+    std::vector<long> row_values(this->ncols);
+    for (long col = 0; col < this->ncols; ++col) {
+        row_values[col] = this->matrix[row * this->ncols + col];
+    }
+    return row_values;
 }
 
 MapVector<long> DenseMatrix::getrow_sparse(long row) const {
     check_row_bounds(row);
     MapVector<long> row_vector;
     for (long col = 0; col < this->ncols; ++col) {
-        long value = this->matrix[row][col];
+        long value = this->matrix[row * this->ncols + col];
         if (value != 0) {
             row_vector[col] = value;
         }
@@ -135,7 +139,7 @@ void DenseMatrix::getrow_sparse(long row, MapVector<long> &row_vector) const {
     check_row_bounds(row);
     row_vector.clear();
     for (long col = 0; col < this->ncols; ++col) {
-        long value = this->matrix[row][col];
+        long value = this->matrix[row * this->ncols + col];
         if (value != 0) {
             row_vector[col] = value;
         }
@@ -148,7 +152,7 @@ const MapVector<long>& DenseMatrix::getrow_sparseref(long row) const {
     ++temp_vector_idx;
     slot.clear();
     for (long col = 0; col < this->ncols; ++col) {
-        long value = this->matrix[row][col];
+        long value = this->matrix[row * this->ncols + col];
         if (value != 0) {
             slot[col] = value;
         }
@@ -161,7 +165,7 @@ EdgeWeights DenseMatrix::incoming_edges(long block) const {
     std::vector<long> indices;
     std::vector<long> values;
     for (long row = 0; row < this->nrows; ++row) {
-        long value = this->matrix[row][block];
+        long value = this->matrix[row * this->ncols + block];
         if (value != 0) {
             indices.push_back(row);
             values.push_back(value);
@@ -176,13 +180,13 @@ std::set<long> DenseMatrix::neighbors(long block) const {
     std::set<long> result;
     // Outgoing edges
     for (long col = 0; col < this->ncols; ++col) {
-        if (this->matrix[block][col] != 0) {
+        if (this->matrix[block * this->ncols + col] != 0) {
             result.insert(col);
         }
     }
     // Incoming edges
     for (long row = 0; row < this->nrows; ++row) {
-        if (this->matrix[row][block] != 0) {
+        if (this->matrix[row * this->ncols + block] != 0) {
             result.insert(row);
         }
     }
@@ -195,7 +199,7 @@ MapVector<long> DenseMatrix::neighbors_weights(long block) const {
     MapVector<long> result;
     // Outgoing edges
     for (long col = 0; col < this->ncols; ++col) {
-        long value = this->matrix[block][col];
+        long value = this->matrix[block * this->ncols + col];
         if (value != 0) {
             result[col] += value;
         }
@@ -203,7 +207,7 @@ MapVector<long> DenseMatrix::neighbors_weights(long block) const {
     // Incoming edges
     for (long row = 0; row < this->nrows; ++row) {
         if (row != block) {
-            long value = this->matrix[row][block];
+            long value = this->matrix[row * this->ncols + block];
             if (value != 0) {
                 result[row] += value;
             }
@@ -217,7 +221,7 @@ Indices DenseMatrix::nonzero() const {
     std::vector<long> col_vector;
     for (long row = 0; row < this->nrows; ++row) {
         for (long col = 0; col < this->ncols; ++col) {
-            if (this->matrix[row][col] != 0) {
+            if (this->matrix[row * this->ncols + col] != 0) {
                 row_vector.push_back(row);
                 col_vector.push_back(col);
             }
@@ -231,7 +235,7 @@ EdgeWeights DenseMatrix::outgoing_edges(long block) const {
     std::vector<long> indices;
     std::vector<long> values;
     for (long col = 0; col < this->ncols; ++col) {
-        long value = this->matrix[block][col];
+        long value = this->matrix[block * this->ncols + col];
         if (value != 0) {
             indices.push_back(col);
             values.push_back(value);
@@ -244,11 +248,11 @@ void DenseMatrix::setrow(long row, const MapVector<long> &vector) {
     check_row_bounds(row);
     // Clear the row first
     for (long col = 0; col < this->ncols; ++col) {
-        this->matrix[row][col] = 0;
+        this->matrix[row * this->ncols + col] = 0;
     }
     // Set values from sparse vector
     for (const auto &entry : vector) {
-        this->matrix[row][entry.first] = entry.second;
+        this->matrix[row * this->ncols + entry.first] = entry.second;
     }
 }
 
@@ -256,25 +260,25 @@ void DenseMatrix::setcol(long col, const MapVector<long> &vector) {
     check_col_bounds(col);
     // Clear the column first
     for (long row = 0; row < this->nrows; ++row) {
-        this->matrix[row][col] = 0;
+        this->matrix[row * this->ncols + col] = 0;
     }
     // Set values from sparse vector
     for (const auto &entry : vector) {
-        this->matrix[entry.first][col] = entry.second;
+        this->matrix[entry.first * this->ncols + col] = entry.second;
     }
 }
 
 void DenseMatrix::sub(long row, long col, long val) {
     check_row_bounds(row);
     check_col_bounds(col);
-    this->matrix[row][col] -= val;
+    this->matrix[row * this->ncols + col] -= val;
 }
 
 long DenseMatrix::edges() const {
     long total = 0;
     for (long row = 0; row < this->nrows; ++row) {
         for (long col = 0; col < this->ncols; ++col) {
-            total += this->matrix[row][col];
+            total += this->matrix[row * this->ncols + col];
         }
     }
     return total;
@@ -283,7 +287,7 @@ long DenseMatrix::edges() const {
 void DenseMatrix::print() const {
     for (long row = 0; row < this->nrows; ++row) {
         for (long col = 0; col < this->ncols; ++col) {
-            std::cout << this->matrix[row][col] << " ";
+            std::cout << this->matrix[row * this->ncols + col] << " ";
         }
         std::cout << std::endl;
     }
@@ -297,7 +301,7 @@ std::vector<long> DenseMatrix::sum(long axis) const {
         std::vector<long> totals(this->ncols, 0);
         for (long row = 0; row < this->nrows; ++row) {
             for (long col = 0; col < this->ncols; ++col) {
-                totals[col] += this->matrix[row][col];
+                totals[col] += this->matrix[row * this->ncols + col];
             }
         }
         return totals;
@@ -305,7 +309,7 @@ std::vector<long> DenseMatrix::sum(long axis) const {
         std::vector<long> totals(this->nrows, 0);
         for (long row = 0; row < this->nrows; ++row) {
             for (long col = 0; col < this->ncols; ++col) {
-                totals[row] += this->matrix[row][col];
+                totals[row] += this->matrix[row * this->ncols + col];
             }
         }
         return totals;
@@ -315,7 +319,7 @@ std::vector<long> DenseMatrix::sum(long axis) const {
 long DenseMatrix::trace() const {
     long total = 0;
     for (long index = 0; index < this->nrows && index < this->ncols; ++index) {
-        total += this->matrix[index][index];
+        total += this->matrix[index * this->ncols + index];
     }
     return total;
 }
@@ -332,14 +336,14 @@ void DenseMatrix::update_edge_counts(long current_block, long proposed_block,
     
     // Update rows
     for (long col = 0; col < this->ncols; ++col) {
-        this->matrix[current_block][col] = current_row[col];
-        this->matrix[proposed_block][col] = proposed_row[col];
+        this->matrix[current_block * this->ncols + col] = current_row[col];
+        this->matrix[proposed_block * this->ncols + col] = proposed_row[col];
     }
     
     // Update columns
     for (long row = 0; row < this->nrows; ++row) {
-        this->matrix[row][current_block] = current_col[row];
-        this->matrix[row][proposed_block] = proposed_col[row];
+        this->matrix[row * this->ncols + current_block] = current_col[row];
+        this->matrix[row * this->ncols + proposed_block] = proposed_col[row];
     }
 }
 
@@ -355,30 +359,30 @@ void DenseMatrix::update_edge_counts(long current_block, long proposed_block,
     
     // Clear and update current_block row
     for (long col = 0; col < this->ncols; ++col) {
-        this->matrix[current_block][col] = 0;
+        this->matrix[current_block * this->ncols + col] = 0;
     }
     for (const auto &entry : current_row) {
-        this->matrix[current_block][entry.first] = entry.second;
+        this->matrix[current_block * this->ncols + entry.first] = entry.second;
     }
     
     // Clear and update proposed_block row
     for (long col = 0; col < this->ncols; ++col) {
-        this->matrix[proposed_block][col] = 0;
+        this->matrix[proposed_block * this->ncols + col] = 0;
     }
     for (const auto &entry : proposed_row) {
-        this->matrix[proposed_block][entry.first] = entry.second;
+        this->matrix[proposed_block * this->ncols + entry.first] = entry.second;
     }
     
     // Update columns
     for (long row = 0; row < this->nrows; ++row) {
-        this->matrix[row][current_block] = 0;
-        this->matrix[row][proposed_block] = 0;
+        this->matrix[row * this->ncols + current_block] = 0;
+        this->matrix[row * this->ncols + proposed_block] = 0;
     }
     for (const auto &entry : current_col) {
-        this->matrix[entry.first][current_block] = entry.second;
+        this->matrix[entry.first * this->ncols + current_block] = entry.second;
     }
     for (const auto &entry : proposed_col) {
-        this->matrix[entry.first][proposed_block] = entry.second;
+        this->matrix[entry.first * this->ncols + proposed_block] = entry.second;
     }
 }
 
@@ -387,7 +391,7 @@ void DenseMatrix::update_edge_counts(const Delta &delta) {
         long row = std::get<0>(entry);
         long col = std::get<1>(entry);
         long change = std::get<2>(entry);
-        this->matrix[row][col] += change;
+        this->matrix[row * this->ncols + col] += change;
     }
 }
 
@@ -399,7 +403,7 @@ std::vector<long> DenseMatrix::values() const {
     std::vector<long> values;
     for (long row = 0; row < this->nrows; ++row) {
         for (long col = 0; col < this->ncols; ++col) {
-            long value = this->matrix[row][col];
+            long value = this->matrix[row * this->ncols + col];
             if (value != 0) {
                 values.push_back(value);
             }
