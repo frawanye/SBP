@@ -13,6 +13,34 @@ namespace block_merge {
 
 Delta blockmodel_delta(long current_block, long proposed_block, const Blockmodel &blockmodel) {
     Delta delta(current_block, proposed_block, blockmodel.degrees(current_block), args.coodelta);
+    // On the dense compute path, read the current block's row/col as dense vectors and iterate them
+    // directly (skipping empty cells) instead of materializing MapVector slices via getrow/getcol_sparse.
+    if (dense_compute()) {
+        const std::vector<long> row = blockmodel.blockmatrix()->getrow(current_block);
+        for (long col = 0; col < (long) row.size(); ++col) {
+            long value = row[col];
+            if (value == 0) continue;
+            if (col == current_block || col == proposed_block) {  // entry = current_block, current_block
+                delta.add(proposed_block, proposed_block, value);
+            } else {
+                delta.add(proposed_block, col, value);
+            }
+            delta.sub(current_block, col, value);
+        }
+        const std::vector<long> column = blockmodel.blockmatrix()->getcol(current_block);
+        for (long row_idx = 0; row_idx < (long) column.size(); ++row_idx) {
+            if (row_idx == current_block) continue;  // already handled above
+            long value = column[row_idx];
+            if (value == 0) continue;
+            if (row_idx == proposed_block) {  // entry = current_block, current_block
+                delta.add(proposed_block, proposed_block, value);
+            } else {
+                delta.add(row_idx, proposed_block, value);
+            }
+            delta.sub(row_idx, current_block, value);
+        }
+        return delta;
+    }
     for (const std::pair<long, long> &entry: blockmodel.blockmatrix()->getrow_sparse(current_block)) {
         long col = entry.first;  // row = current_block
         long value = entry.second;

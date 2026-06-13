@@ -524,3 +524,76 @@ TEST_F(BlockMergeEntropyDenseTest, CooBlockmodelDeltaMDLIsCorrectlyComputeWithBl
     double E_after = entropy::mdl(B2, graph);
     EXPECT_FLOAT_EQ(E_after - E_before, dE);
 }
+
+// =============================================================================
+// Dense-vs-sparse equivalence tests (parametric path)
+// For each converted function: build the same blockmodel with sparse_transpose
+// and dense, run the function, assert the results are identical.
+// =============================================================================
+
+class DenseSparseEquivTest : public ::testing::Test {
+protected:
+    Graph graph;
+    Blockmodel B_sparse, B_dense;
+    utils::ProposalAndEdgeCounts Proposal;
+    Delta Deltas;
+    Vertex V7;
+
+    void SetUp() override {
+        args.parametric = true;
+        args.hastings_correction = true;
+        std::vector<std::vector<long>> edges {
+            {0,0},{0,1},{0,2},{1,2},{2,3},{3,1},{3,2},{3,5},{4,1},{4,6},{5,4},{5,5},{5,6},{5,7},
+            {6,4},{7,3},{7,9},{8,5},{8,7},{9,10},{10,7},{10,8},{10,10}
+        };
+        std::vector<long> assignment = { 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2 };
+        std::vector<bool> self_edges = { true, false, false, false, false, true, false, false, false, false, true };
+        NeighborList out_n, in_n;
+        for (const auto &e : edges) {
+            utils::insert(out_n, e[0], e[1]);
+            utils::insert(in_n, e[1], e[0]);
+        }
+        graph = Graph(out_n, in_n, 11, (long) edges.size(), self_edges, assignment);
+        V7 = { 7, 2, 3 };
+        Proposal = { 0, 2, 3, 5 };
+        Deltas = Delta(2, 0);
+        Deltas.add(0, 0, 1); Deltas.add(0, 2, 1); Deltas.add(1, 0, 1);
+        Deltas.add(1, 2, -1); Deltas.add(2, 0, 1); Deltas.add(2, 2, -3);
+
+        args.matrix_type = "sparse_transpose";
+        B_sparse = Blockmodel(3, graph, 0.5, assignment);
+        args.matrix_type = "dense";
+        B_dense = Blockmodel(3, graph, 0.5, assignment);
+        args.matrix_type = "sparse_transpose";  // reset so dense_compute() is accurate per call
+    }
+};
+
+TEST_F(DenseSparseEquivTest, ParametricMDLMatchesBetweenDenseAndSparse) {
+    args.matrix_type = "sparse_transpose";
+    double sparse_mdl = entropy::mdl(B_sparse, graph);
+    args.matrix_type = "dense";
+    double dense_mdl = entropy::mdl(B_dense, graph);
+    args.matrix_type = "sparse_transpose";
+    EXPECT_FLOAT_EQ(sparse_mdl, dense_mdl);
+}
+
+TEST_F(DenseSparseEquivTest, ParametricDeltaMDLMatchesBetweenDenseAndSparse) {
+    args.matrix_type = "sparse_transpose";
+    double sparse_dE = entropy::delta_mdl(B_sparse, Deltas, Proposal);
+    args.matrix_type = "dense";
+    double dense_dE = entropy::delta_mdl(B_dense, Deltas, Proposal);
+    args.matrix_type = "sparse_transpose";
+    EXPECT_FLOAT_EQ(sparse_dE, dense_dE);
+}
+
+TEST_F(DenseSparseEquivTest, HastingsCorrectionMatchesBetweenDenseAndSparse) {
+    long vertex = 7;
+    long current_block_sparse = B_sparse.block_assignment(vertex);
+    long current_block_dense  = B_dense.block_assignment(vertex);
+    args.matrix_type = "sparse_transpose";
+    double sparse_h = entropy::hastings_correction(vertex, graph, B_sparse, Deltas, current_block_sparse, Proposal);
+    args.matrix_type = "dense";
+    double dense_h = entropy::hastings_correction(vertex, graph, B_dense, Deltas, current_block_dense, Proposal);
+    args.matrix_type = "sparse_transpose";
+    EXPECT_FLOAT_EQ(sparse_h, dense_h);
+}

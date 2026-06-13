@@ -462,3 +462,60 @@ TEST_F(NonparametricBlockMergeEntropyDenseTest, CooBlockmodelDeltaMDLIsCorrectly
     double E_after = entropy::nonparametric::mdl(B2, graph);
     EXPECT_FLOAT_EQ(E_after - E_before, dE);
 }
+
+// =============================================================================
+// Dense-vs-sparse equivalence tests (nonparametric path)
+// =============================================================================
+
+class NonparametricDenseSparseEquivTest : public ::testing::Test {
+protected:
+    Graph graph;
+    Blockmodel B_sparse, B_dense;
+    utils::ProposalAndEdgeCounts Proposal;
+    Delta Deltas;
+
+    void SetUp() override {
+        args.parametric = false;
+        std::vector<std::vector<long>> edges {
+            {0,0},{0,1},{0,2},{1,2},{2,3},{3,1},{3,2},{3,5},{4,1},{4,6},{5,4},{5,5},{5,6},{5,7},
+            {6,4},{7,3},{7,9},{8,5},{8,7},{9,10},{10,7},{10,8},{10,10}
+        };
+        std::vector<long> assignment = { 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2 };
+        std::vector<bool> self_edges = { true, false, false, false, false, true, false, false, false, false, true };
+        NeighborList out_n, in_n;
+        for (const auto &e : edges) {
+            utils::insert(out_n, e[0], e[1]);
+            utils::insert(in_n, e[1], e[0]);
+        }
+        graph = Graph(out_n, in_n, 11, (long) edges.size(), self_edges, assignment);
+        Proposal = { 0, 2, 3, 5 };
+        Deltas = Delta(2, 0);
+        Deltas.add(0, 0, 1); Deltas.add(0, 2, 1); Deltas.add(1, 0, 1);
+        Deltas.add(1, 2, -1); Deltas.add(2, 0, 1); Deltas.add(2, 2, -3);
+
+        args.matrix_type = "sparse_transpose";
+        B_sparse = Blockmodel(3, graph, 0.5, assignment);
+        args.matrix_type = "dense";
+        B_dense = Blockmodel(3, graph, 0.5, assignment);
+        args.matrix_type = "sparse_transpose";
+    }
+};
+
+TEST_F(NonparametricDenseSparseEquivTest, NonparametricMDLMatchesBetweenDenseAndSparse) {
+    args.matrix_type = "sparse_transpose";
+    double sparse_mdl = entropy::nonparametric::mdl(B_sparse, graph);
+    args.matrix_type = "dense";
+    double dense_mdl = entropy::nonparametric::mdl(B_dense, graph);
+    args.matrix_type = "sparse_transpose";
+    EXPECT_FLOAT_EQ(sparse_mdl, dense_mdl);
+}
+
+TEST_F(NonparametricDenseSparseEquivTest, NonparametricDeltaMDLMatchesBetweenDenseAndSparse) {
+    long vertex = 7;
+    args.matrix_type = "sparse_transpose";
+    double sparse_dE = entropy::nonparametric::delta_mdl(B_sparse, graph, vertex, Deltas, Proposal);
+    args.matrix_type = "dense";
+    double dense_dE = entropy::nonparametric::delta_mdl(B_dense, graph, vertex, Deltas, Proposal);
+    args.matrix_type = "sparse_transpose";
+    EXPECT_FLOAT_EQ(sparse_dE, dense_dE);
+}

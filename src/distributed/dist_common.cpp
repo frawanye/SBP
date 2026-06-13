@@ -42,7 +42,28 @@ utils::ProposalAndEdgeCounts propose_new_block(long current_block, EdgeWeights &
         return utils::ProposalAndEdgeCounts{proposal, k_out, k_in, k};
     }
 
-    // Build multinomial distribution
+    // Build multinomial distribution. Dense path: same logic as common::propose_new_block.
+    if (dense_compute()) {
+        const std::shared_ptr<ISparseMatrix> matrix = blockmodel.blockmatrix();
+        std::vector<long> row = matrix->getrow(neighbor_block);
+        std::vector<long> col = matrix->getcol(neighbor_block);
+        std::vector<long> dense_edges(num_blocks, 0);
+        for (long i = 0; i < num_blocks; ++i) {
+            dense_edges[i] = row[i] + (i != neighbor_block ? col[i] : 0);
+        }
+        if (block_merge) {
+            dense_edges[current_block] = 0;
+        }
+        long dense_total = utils::sum<long>(dense_edges);
+        if (dense_total == 0) {
+            long proposal = propose_random_block(current_block, num_blocks);
+            assert(blockmodel.stores(proposal));
+            return utils::ProposalAndEdgeCounts{proposal, k_out, k_in, k};
+        }
+        long proposal = choose_neighbor(dense_edges);
+        assert(blockmodel.stores(proposal));
+        return utils::ProposalAndEdgeCounts{proposal, k_out, k_in, k};
+    }
     double total_edges = 0.0;
     MapVector<long> edges = blockmodel.blockmatrix()->neighbors_weights(neighbor_block);
     if (block_merge) {  // Make sure proposal != current_block
