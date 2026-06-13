@@ -497,7 +497,10 @@ Blockmodel split_communities(Blockmodel &blockmodel, const Graph &graph, int tar
     for (int i = 0; i < num_blocks; ++i) {
         omp_init_lock(&locks[i]);
     }
-    args.matrix_type = "sparse"; //true;
+    // For dense runs, keep dense so the split-proposal blockmodels use DenseMatrix
+    // and the dense compute path. For all other matrix types, force sparse to avoid
+    // the overhead of transpose maintenance on thousands of throwaway 2-block models.
+    if (user_arg != "dense") args.matrix_type = "sparse";
     double loop_start_t = MPI_Wtime();
     std::vector<Graph> subgraphs(blockmodel.num_blocks());
     std::vector<MapVector<long>> translators(blockmodel.num_blocks());

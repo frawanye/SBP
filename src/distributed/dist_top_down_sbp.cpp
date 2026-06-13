@@ -163,7 +163,9 @@ TwoHopBlockmodel split_communities(TwoHopBlockmodel &blockmodel, const Graph &gr
     // The assignment to be communicated to other nodes
     std::vector<long> comm_assignment = utils::constant<long>(graph.num_vertices(), -1);
     // for communication, can do an all_reduce (MIN) on dE for each block and an all_reduce (MAX) on comm_assignment
-    args.matrix_type = "sparse";
+    // For dense runs, keep dense so split-proposal blockmodels use DenseMatrix.
+    // For all other types, force sparse to avoid transpose overhead on throwaway 2-block models.
+    if (user_matrix_type != "dense") args.matrix_type = "sparse";
     std::vector<Graph> subgraphs(blockmodel.num_blocks());
     std::vector<MapVector<long>> translators(blockmodel.num_blocks());
     #pragma omp parallel for schedule(dynamic) default(none) shared(graph, blockmodel, subgraphs, translators)
