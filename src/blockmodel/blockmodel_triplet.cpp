@@ -113,7 +113,7 @@ Blockmodel TopDownBlockmodelTriplet::get_next_blockmodel(Blockmodel &old_blockmo
     if (this->golden_ratio_not_reached()) {
         Blockmodel blockmodel = this->get(1).copy();
 //        blockmodel.setNum_blocks_to_merge(long(blockmodel.num_blocks() * (1.0/BLOCK_REDUCTION_RATE)));
-        blockmodel.setNum_blocks_to_merge(long(ceil(blockmodel.num_blocks() * 1.5)));
+        blockmodel.setNum_blocks_to_merge(long(ceil(blockmodel.num_blocks() * args.splitrate)));
         if (blockmodel.getNum_blocks_to_merge() == 0 ||
             blockmodel.getNum_blocks_to_merge() >= (long) blockmodel.block_assignment().size()) {
             this->optimal_num_blocks_found = true;
@@ -166,7 +166,7 @@ void TopDownBlockmodelTriplet::update(Blockmodel &blockmodel) {
         index = 1;
         std::cout << "placing new blockmodel in the middle (index 1)" << std::endl;
     } else {
-        if ((blockmodel.getOverall_entropy() <= this->blockmodels[1].getOverall_entropy()) &
+        if ((blockmodel.getOverall_entropy() <= this->blockmodels[1].getOverall_entropy()) &&
            (abs(blockmodel.num_blocks() - this->get(1).num_blocks()) > 0.1 * this->get(1).num_blocks())) {
 	    long old_index;
             if (this->get(1).num_blocks() < blockmodel.num_blocks()) {

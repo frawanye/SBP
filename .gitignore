@@ -115,6 +115,9 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# Cursor-generated files
+cursor_files/
+
 # Custom added
 # IDE stuff
 *.code-workspace
@@ -148,3 +151,6 @@ profiling/
 tmp
 *.err
 *.sh
+output
+runs
+build*

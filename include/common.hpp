@@ -11,7 +11,7 @@
 // #include <Eigen/Core>
 
 #include "blockmodel/blockmodel.hpp"
-#include "blockmodel/sparse/csparse_matrix.hpp"
+#include "matrix/csparse_matrix.hpp"
 #include "typedefs.hpp"
 #include "fastlog.hpp"
 #include "rng.hpp"
@@ -54,6 +54,10 @@ long choose_neighbor(std::vector<long> &neighbor_indices, std::vector<long> &nei
 /// Chooses a neighboring block using a multinomial distribution based on the number of edges connecting the current
 /// block to the neighboring blocks.
 long choose_neighbor(const SparseVector<double> &multinomial_distribution);
+
+/// Dense counterpart of choose_neighbor: `block_weights` is a dense vector indexed by block id, so the
+/// drawn index is the chosen block. Used by the dense compute path in propose_new_block.
+long choose_neighbor(const std::vector<long> &block_weights);
 
 /// TODO: computing current_block_self_edges is annoying af. Maybe use Updates and Deltas instead.
 /// Computes the block degrees under a proposed move

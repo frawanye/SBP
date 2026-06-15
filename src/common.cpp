@@ -17,6 +17,13 @@ long choose_neighbor(std::vector<long> &neighbor_indices, std::vector<long> &nei
     return neighbor_indices[index];
 }
 
+long choose_neighbor(const std::vector<long> &block_weights) {
+    // Dense multinomial: block_weights is indexed directly by block id, so the drawn index IS the
+    // chosen block. std::discrete_distribution normalizes the (unnormalized) weights internally.
+    std::discrete_distribution<long> distribution(block_weights.begin(), block_weights.end());
+    return distribution(rng::generator());
+}
+
 long choose_neighbor(const SparseVector<double> &multinomial_distribution) {
 //    std::cout << "multinomial distribution: ";
 //    utils::print<long>(multinomial_distribution.idx);
@@ -163,6 +170,30 @@ utils::ProposalAndEdgeCounts propose_new_block(long current_block, EdgeWeights &
         long proposal = propose_random_block(current_block, _num_blocks);
         return utils::ProposalAndEdgeCounts{proposal, k_out, k_in, k};
     } */
+
+    // Dense compute path: build the neighbor-weight multinomial directly from dense getrow/getcol
+    // vectors (indexed by block id) instead of materializing a MapVector via neighbors_weights.
+    if (dense_compute()) {
+        const std::shared_ptr<ISparseMatrix> matrix = blockmodel.blockmatrix();
+        std::vector<long> row = matrix->getrow(neighbor_block);
+        std::vector<long> col = matrix->getcol(neighbor_block);
+        std::vector<long> dense_edges(num_blocks, 0);
+        // Mirror DenseMatrix::neighbors_weights: outgoing edges from the row (self-edge included),
+        // incoming edges from the column excluding the diagonal to avoid double counting.
+        for (long i = 0; i < num_blocks; ++i) {
+            dense_edges[i] = row[i] + (i != neighbor_block ? col[i] : 0);
+        }
+        if (block_merge) {  // Make sure proposal != current_block
+            dense_edges[current_block] = 0;
+        }
+        long dense_total = utils::sum<long>(dense_edges);
+        if (dense_total == 0) {  // Neighbor block has no usable neighbors, so propose a random block
+            long proposal = propose_random_block(current_block, num_blocks);
+            return utils::ProposalAndEdgeCounts{proposal, k_out, k_in, k};
+        }
+        long proposal = choose_neighbor(dense_edges);
+        return utils::ProposalAndEdgeCounts{proposal, k_out, k_in, k};
+    }
 
     // Build multinomial distribution
     double total_edges = 0.0;

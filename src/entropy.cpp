@@ -4,6 +4,17 @@
 
 #include "cmath"
 
+// TODO (future GPU perf): the delta_mdl / block_merge_delta_mdl functions below
+// currently iterate delta.entries() and then probe delta.get(row,col) != 0 while
+// looping over getrow_sparse/getcol_sparse(proposed_block). On the GPU offload path,
+// fold the delta into a single merge-walk: co-iterate each sorted delta line with the
+// corresponding sorted matrix row/col, classifying each cell by merge position
+// (in both = changed; matrix only = unchanged value, shifted degrees; delta only =
+// new cell). This replaces the entries() loop, the matrix loop, and the get()
+// exclusion in one pass, removing all delta point-lookups. Depends on
+// getrow_sparse/getcol_sparse returning sorted flat arrays on the GPU.
+// See cursor_files/CHANGELOG.md (2026-06-10 "fold Delta into the matrix-row pass").
+
 namespace entropy {
 
 double block_merge_delta_mdl(long current_block, long proposal, long num_edges, const Blockmodel &blockmodel,
@@ -59,7 +70,10 @@ double block_merge_delta_mdl(long current_block, long proposal, long num_edges, 
 
 double block_merge_delta_mdl(long current_block, long proposal, long num_edges, const Blockmodel &blockmodel,
                              SparseEdgeCountUpdates &updates, common::NewBlockDegrees &block_degrees) {
-    // Blockmodel indexing
+    // Deprecated overload (test-only). Calls delta_entropy_temp which requires MapVector input;
+    // no dense path is added here because delta_entropy_temp(vector&,...) does not skip zeros
+    // and would produce NaN. Full coverage is provided by the existing dense fixture tests and
+    // the DenseSparseEquiv tests on the active Delta-based overloads.
     const std::shared_ptr<ISparseMatrix> matrix = blockmodel.blockmatrix();
     const MapVector<long> &old_block_row = matrix->getrow_sparse(current_block); // M_r_t1
     const MapVector<long> &old_proposal_row = matrix->getrow_sparse(proposal);   // M_s_t1
@@ -100,6 +114,31 @@ double block_merge_delta_mdl(long current_block, const Blockmodel &blockmodel, c
         if (row == current_block || col == current_block) continue;  // the "new" cell entropy == 0;
         delta_entropy -= common::cell_entropy(matrix->get(row, col) + change, block_degrees.block_degrees_in[col],
                                               block_degrees.block_degrees_out[row]);
+    }
+    if (dense_compute()) {
+        const std::vector<long> proposed_row = matrix->getrow(proposed_block);
+        for (long col = 0; col < (long) proposed_row.size(); ++col) {
+            long row = proposed_block;
+            long value = proposed_row[col];
+            if (value == 0) continue;
+            if (delta.get(row, col) != 0) continue;
+            delta_entropy += common::cell_entropy((double) value, (double) blockmodel.degrees_in(col),
+                                                  (double) blockmodel.degrees_out(row));
+            delta_entropy -= common::cell_entropy((double) value, (double) block_degrees.block_degrees_in[col],
+                                                  (double) block_degrees.block_degrees_out[row]);
+        }
+        const std::vector<long> proposed_col = matrix->getcol(proposed_block);
+        for (long row = 0; row < (long) proposed_col.size(); ++row) {
+            long col = proposed_block;
+            long value = proposed_col[row];
+            if (value == 0) continue;
+            if (delta.get(row, col) != 0 || row == current_block || row == proposed_block) continue;
+            delta_entropy += common::cell_entropy((double) value, (double) blockmodel.degrees_in(col),
+                                                  (double) blockmodel.degrees_out(row));
+            delta_entropy -= common::cell_entropy((double) value, (double) block_degrees.block_degrees_in[col],
+                                                  (double) block_degrees.block_degrees_out[row]);
+        }
+        return delta_entropy;
     }
     for (const LongEntry &entry: blockmodel.blockmatrix()->getrow_sparse(proposed_block)) {
         long row = proposed_block;
@@ -157,6 +196,31 @@ double block_merge_delta_mdl(long current_block, utils::ProposalAndEdgeCounts pr
                                               (double) blockmodel.degrees_out(row));
         if (row == current_block || col == current_block) continue;  // the "new" cell entropy == 0;
         delta_entropy -= common::cell_entropy(value + change, get_deg_in(col), get_deg_out(row));
+    }
+    // Unchanged cells of the proposed block's row/col. On the dense compute path, read them as dense
+    // vectors and iterate directly (skipping empty cells) instead of materializing MapVector slices.
+    if (dense_compute()) {
+        const std::vector<long> proposed_row = matrix->getrow(proposed_block);
+        for (long col = 0; col < (long) proposed_row.size(); ++col) {
+            long row = proposed_block;
+            auto value = (double) proposed_row[col];
+            if (value == 0) continue;
+            if (delta.get(row, col) != 0) continue;
+            delta_entropy += common::cell_entropy(value, (double) blockmodel.degrees_in(col),
+                                                  (double) blockmodel.degrees_out(row));
+            delta_entropy -= common::cell_entropy(value, get_deg_in(col), get_deg_out(row));
+        }
+        const std::vector<long> proposed_col = matrix->getcol(proposed_block);
+        for (long row = 0; row < (long) proposed_col.size(); ++row) {
+            long col = proposed_block;
+            auto value = (double) proposed_col[row];
+            if (value == 0) continue;
+            if (delta.get(row, col) != 0 || row == current_block || row == proposed_block) continue;
+            delta_entropy += common::cell_entropy(value, (double) blockmodel.degrees_in(col),
+                                                  (double) blockmodel.degrees_out(row));
+            delta_entropy -= common::cell_entropy(value, get_deg_in(col), get_deg_out(row));
+        }
+        return delta_entropy;
     }
     for (const std::pair<long, long> &entry: blockmodel.blockmatrix()->getrow_sparse(proposed_block)) {
         long row = proposed_block;
@@ -245,7 +309,9 @@ double delta_mdl(long current_block, long proposal, const Blockmodel &blockmodel
 
 double delta_mdl(long current_block, long proposal, const Blockmodel &blockmodel, long num_edges,
                  SparseEdgeCountUpdates &updates, common::NewBlockDegrees &block_degrees) {
-    // Blockmodel indexing
+    // Deprecated overload (test-only). No dense path: delta_entropy_temp(vector&,...) does not
+    // skip zeros and produces NaN on dense matrices with empty blocks. The dense fixture tests
+    // and DenseSparseEquiv tests cover the active (Delta-based) overload instead.
     const std::shared_ptr<ISparseMatrix> matrix = blockmodel.blockmatrix();
     const MapVector<long> &old_block_row = matrix->getrow_sparseref(current_block); // M_r_t1
     const MapVector<long> &old_proposal_row = matrix->getrow_sparseref(proposal);   // M_s_t1
@@ -342,7 +408,68 @@ double delta_mdl(const Blockmodel &blockmodel, const Delta &delta, const utils::
             throw std::invalid_argument("nan/inf in bm delta for new bm when delta != 0");
         }
     }
-    // Compute change in entropy for cells with no delta
+    // Compute change in entropy for cells with no delta. On the dense compute path each row/col is
+    // read as a dense vector and iterated directly (skipping empty cells), instead of materializing
+    // a MapVector via getrow_sparseref/getcol_sparseref.
+    if (dense_compute()) {
+        const std::vector<long> current_row = matrix->getrow(current_block);
+        for (long col = 0; col < (long) current_row.size(); ++col) {
+            long row = current_block;
+            long value = current_row[col];
+            if (value == 0) continue;
+            if (delta.get(row, col) != 0) continue;
+            delta_entropy += common::cell_entropy(value, blockmodel.degrees_in(col),
+                                                  blockmodel.degrees_out(row));
+            delta_entropy -= common::cell_entropy(value, get_deg_in(col), get_deg_out(row));
+            if (std::isnan(delta_entropy) || std::isinf(delta_entropy)) {
+                std::cout << delta_entropy << " for row: " << row << " col: " << col << " val: " << value << " delta: 0" << std::endl;
+                throw std::invalid_argument("nan/inf in bm delta when delta = 0 and row = current block");
+            }
+        }
+        const std::vector<long> proposed_row = matrix->getrow(proposed_block);
+        for (long col = 0; col < (long) proposed_row.size(); ++col) {
+            long row = proposed_block;
+            long value = proposed_row[col];
+            if (value == 0) continue;
+            if (delta.get(row, col) != 0) continue;
+            delta_entropy += common::cell_entropy(value, blockmodel.degrees_in(col),
+                                                  blockmodel.degrees_out(row));
+            delta_entropy -= common::cell_entropy(value, get_deg_in(col), get_deg_out(row));
+            if (std::isnan(delta_entropy) || std::isinf(delta_entropy)) {
+                std::cout << delta_entropy << " for row: " << row << " col: " << col << " val: " << value << " delta: 0" << std::endl;
+                throw std::invalid_argument("nan/inf in bm delta when delta = 0 and row = proposed block");
+            }
+        }
+        const std::vector<long> current_col = matrix->getcol(current_block);
+        for (long row = 0; row < (long) current_col.size(); ++row) {
+            long col = current_block;
+            long value = current_col[row];
+            if (value == 0) continue;
+            if (delta.get(row, col) != 0 || row == current_block || row == proposed_block) continue;
+            delta_entropy += common::cell_entropy(value, blockmodel.degrees_in(col),
+                                                  blockmodel.degrees_out(row));
+            delta_entropy -= common::cell_entropy(value, get_deg_in(col), get_deg_out(row));
+            if (std::isnan(delta_entropy) || std::isinf(delta_entropy)) {
+                std::cout << delta_entropy << " for row: " << row << " col: " << col << " val: " << value << " delta: 0" << std::endl;
+                throw std::invalid_argument("nan/inf in bm delta when delta = 0 and col = current block");
+            }
+        }
+        const std::vector<long> proposed_col = matrix->getcol(proposed_block);
+        for (long row = 0; row < (long) proposed_col.size(); ++row) {
+            long col = proposed_block;
+            long value = proposed_col[row];
+            if (value == 0) continue;
+            if (delta.get(row, col) != 0 || row == current_block || row == proposed_block) continue;
+            delta_entropy += common::cell_entropy(value, blockmodel.degrees_in(col),
+                                                  blockmodel.degrees_out(row));
+            delta_entropy -= common::cell_entropy(value, get_deg_in(col), get_deg_out(row));
+            if (std::isnan(delta_entropy) || std::isinf(delta_entropy)) {
+                std::cout << delta_entropy << " for row: " << row << " col: " << col << " val: " << value << " delta: 0" << std::endl;
+                throw std::invalid_argument("nan/inf in bm delta when delta = 0 and col = proposed block");
+            }
+        }
+        return delta_entropy;
+    }
     for (const auto &entry: blockmodel.blockmatrix()->getrow_sparseref(current_block)) {
         long row = current_block;
         long col = entry.first;
@@ -517,18 +644,30 @@ double hastings_correction(long vertex, const Graph &graph, const Blockmodel &bl
     std::vector<double> block_weights(num_unique_blocks, 0);
     std::vector<double> block_degrees(num_unique_blocks, 0);
     std::vector<double> proposal_degrees(num_unique_blocks, 0);
-    // Indexing
-//    std::vector<long> proposal_row = blockmodel.blockmatrix()->getrow(proposal.proposal);
-//    std::vector<long> proposal_col = blockmodel.blockmatrix()->getcol(proposal.proposal);
-    const MapVector<long> &proposal_row = blockmodel.blockmatrix()->getrow_sparseref(proposal.proposal);
-    const MapVector<long> &proposal_col = blockmodel.blockmatrix()->getcol_sparseref(proposal.proposal);
+    // Indexing. On the dense compute path, read the proposal block's row/col as dense vectors and index
+    // them directly instead of materializing MapVector slices via getrow_sparseref/getcol_sparseref.
+    const bool dense = dense_compute();
+    std::vector<long> proposal_row_dense, proposal_col_dense;
+    const MapVector<long> *proposal_row_sparse = nullptr;
+    const MapVector<long> *proposal_col_sparse = nullptr;
+    if (dense) {
+        proposal_row_dense = blockmodel.blockmatrix()->getrow(proposal.proposal);
+        proposal_col_dense = blockmodel.blockmatrix()->getcol(proposal.proposal);
+    } else {
+        proposal_row_sparse = &blockmodel.blockmatrix()->getrow_sparseref(proposal.proposal);
+        proposal_col_sparse = &blockmodel.blockmatrix()->getcol_sparseref(proposal.proposal);
+    }
     // Fill Arrays
     long index = 0;
     long num_blocks = blockmodel.num_blocks();
     const std::vector<long> &current_block_degrees = blockmodel.degrees();
     for (auto const &entry: block_counts) {
         counts[index] = entry.second;
-        proposal_weights[index] = map_vector::get(proposal_row, entry.first) + map_vector::get(proposal_col, entry.first) + 1.0;
+        double proposal_row_val = dense ? (double) proposal_row_dense[entry.first]
+                                        : (double) map_vector::get(*proposal_row_sparse, entry.first);
+        double proposal_col_val = dense ? (double) proposal_col_dense[entry.first]
+                                        : (double) map_vector::get(*proposal_col_sparse, entry.first);
+        proposal_weights[index] = proposal_row_val + proposal_col_val + 1.0;
         block_degrees[index] = current_block_degrees[entry.first] + num_blocks;
         block_weights[index] = blockmodel.blockmatrix()->get(current_block, entry.first) +
                                delta.get(current_block, entry.first) +
@@ -626,6 +765,17 @@ double sparse_entropy(const Blockmodel &blockmodel, const Graph &graph) {
     double S = 0;
 
     for (long source = 0; source < blockmodel.num_blocks(); ++source) {
+        if (dense_compute()) {  // Dense compute path: iterate the dense row directly, skipping empty cells.
+            const std::vector<long> row = blockmodel.blockmatrix()->getrow(source);
+            for (long destination = 0; destination < (long) row.size(); ++destination) {
+                long weight = row[destination];
+                if (weight == 0) continue;
+                S += eterm_exact(source, destination, weight);
+                assert(!std::isinf(S));
+                assert(!std::isnan(S));
+            }
+            continue;
+        }
         const MapVector<long> &row = blockmodel.blockmatrix()->getrow_sparseref(source);
         for (const std::pair<long, long> &entry : row) {
             long destination = entry.first;

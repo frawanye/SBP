@@ -8,7 +8,6 @@
 #include <fstream>
 #include <iostream>
 #include <cmath>
-// #include <execution>  // TBB dependency removed
 #include <mpi.h>
 #include <numeric>
 #include <sstream>

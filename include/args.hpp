@@ -46,11 +46,14 @@ public:  // Everything in here is public, because why not?
     std::string samplingalg;
     std::string split;
     std::string splitinit;
+    float splitrate;
     int subgraphs;
     std::string subgraphpartition;
     std::string tag;
     int threads;
-    bool no_transpose;
+    bool coodelta;
+    bool csrgraph;
+    std::string matrix_type;
     std::string type;
     bool undirected;
 
@@ -140,6 +143,11 @@ public:  // Everything in here is public, because why not?
                                                 "random|snowball|single-snowball|connectivity-snowball", parser);
             TCLAP::ValueArg<std::string> _splitinit("", "splitinit", "The type of split initialization to use", false, "random",
                                                     "random|degree-weighted|high-degree", parser);
+            TCLAP::ValueArg<float> _splitrate("", "splitrate", "Growth factor for the target block count during the "
+                                              "TopDownSBP initial expansion phase. Each iteration targets "
+                                              "ceil(current_blocks * splitrate) blocks. Smaller values (e.g. 1.1) "
+                                              "make finer-grained splits; larger values (e.g. 1.5) are coarser.",
+                                              false, 1.25, "> 1.0", parser);
             TCLAP::ValueArg<int> _subgraphs("", "subgraphs", "If running divide and conquer SBP, the number of subgraphs"
                                             "to partition the data into. Must be <= number of MPI ranks. If <= 1, set to number of MPI ranks",
                                             false, 0, "<= number of MPI ranks>", parser);
@@ -150,10 +158,15 @@ public:  // Everything in here is public, because why not?
                                               "string or param1=value1;param2=value2", parser);
             TCLAP::ValueArg<int> _threads("", "threads", "The number of OpenMP threads to use. If less than 1, will set "
                                           "number of threads to number of logical CPU cores", false, 1, "int", parser);
-            TCLAP::SwitchArg _notranspose("", "no_transpose", "If set, will NOT store the matrix no_transpose for faster column"
-                                        "indexing. Default = false", parser, false);
+            TCLAP::ValueArg<std::string> _matrix_type("", "matrix_type", "Matrix storage type for blockmodel",
+                                                      false, "sparse_transpose", "dense|sparse|sparse_transpose", parser);
             TCLAP::ValueArg<std::string> _type("t", "type", "The type of streaming/name of the graph", false, "static",
                                                "string", parser);
+            TCLAP::SwitchArg _coodelta("", "coodelta", "If set, use sorted COO (coordinate) storage for blockmodel "
+                                      "deltas instead of the default hash-map storage. The COO arrays are GPU-mappable "
+                                      "via omp target map.", parser, false);
+            TCLAP::SwitchArg _csrgraph("", "csrgraph", "If set, use CSR adjacency for the graph. "
+                                      "Otherwise use the neighbor-list (vector-of-vectors) adjacency.", parser, false);
             TCLAP::SwitchArg _undirected("", "undirected", "If set, graph will be treated as undirected", parser,
                                          false);
             parser.parse(argc, argv);
@@ -194,11 +207,14 @@ public:  // Everything in here is public, because why not?
             this->samplingalg = _samplingalg.getValue();
             this->split = _split.getValue();
             this->splitinit = _splitinit.getValue();
+            this->splitrate = _splitrate.getValue();
             this->subgraphs = _subgraphs.getValue();
             this->subgraphpartition = _subgraphpartition.getValue();
             this->tag = _tag.getValue();
             this->threads = _threads.getValue();
-            this->no_transpose = _notranspose.getValue();
+            this->coodelta = _coodelta.getValue();
+            this->csrgraph = _csrgraph.getValue();
+            this->matrix_type = _matrix_type.getValue();
             this->type = _type.getValue();
             this->undirected = _undirected.getValue();
             if (!this->parametric) {

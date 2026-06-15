@@ -1,36 +1,60 @@
 /***
- * Sparse Matrix that uses a vector of unordered maps to store the blockmodel.
+ * Dense Matrix that uses a 2D vector to store the blockmodel.
  */
-#ifndef CPPSBP_PARTITION_SPARSE_DICT_MATRIX_HPP
-#define CPPSBP_PARTITION_SPARSE_DICT_MATRIX_HPP
+#ifndef CPPSBP_PARTITION_DENSE_MATRIX_HPP
+#define CPPSBP_PARTITION_DENSE_MATRIX_HPP
 
-#include <unordered_map>
+#include <omp.h>
+#include <vector>
 
 #include "csparse_matrix.hpp"
 #include "delta.hpp"
-// TODO: figure out where to put utils.hpp so this never happens
-#include "../../utils.hpp"
+#include "../utils.hpp"
 
-// #include <Eigen/Core>
+#pragma omp begin declare target
+/**
+ * Used to access a DenseMatrix on the GPU.
+ */
+struct DenseMatrixView {
+  const long* data;
+  long nrows;
+  long ncols;
+  long get(long row, long col) const {
+    return data[row * ncols + col];
+  };
+  /// Populates the values in `result` with the weighted neighbors of `block`.
+  /// Assumptions: result is already initialized to 0 and is of size max(nrows, ncols),
+  /// and blocks < max(nrows, ncols).
+  void neighbors_weights(long* result, long block) const {
+    // Outgoing edges
+    for (long col = 0; col < this->ncols; ++col) {
+        long value = this->data[block * this->ncols + col];
+        result[col] += value;
+    }
+    // Incoming edges
+    for (long row = 0; row < this->nrows; ++row) {
+        long value = this->data[row * this->ncols + block];
+        result[row] += value * (long)(row != block);  // skips diagonals by multiplying by 0 if row == block
+    }
+  }
+};
+#pragma omp end declare target
 
 /**
- * The basic list-of-maps sparse matrix.
+ * Dense matrix implementation for blockmodel storage.
+ * Uses std::vector<std::vector<long>> for simple, cache-friendly storage.
+ * Best for blockmodels with many inter-block edges.
  */
-class DictMatrix : public ISparseMatrix {
+class DenseMatrix : public ISparseMatrix {
   public:
-    DictMatrix() = default;
-    DictMatrix(long nrows, long ncols) {  // : ncols(ncols), nrows(nrows) {
+    DenseMatrix() = default;
+    DenseMatrix(long nrows, long ncols) {
         this->ncols = ncols;
         this->nrows = nrows;
-        // this->matrix = boost::numeric::ublas::coordinate_matrix<long>(this->nrows, this->ncols);
-//        this->matrix = std::vector<std::unordered_map<long, long>>(this->nrows, std::unordered_map<long, long>());
-        this->matrix = std::vector<MapVector<long>>(this->nrows, MapVector<long>());
-        // this->matrix = boost::numeric::ublas::mapped_matrix<long>(this->nrows, this->ncols);
-        // long shape_array[2] = {this->nrows, this->ncols};
+        this->matrix = std::vector<long>(this->nrows * this->ncols, 0);
         this->shape = std::make_pair(this->nrows, this->ncols);
     }
     void add(long row, long col, long val) override;
-    // virtual void add(long row, std::vector<long> cols, std::vector<long> values) override;
     void clearrow(long row) override;
     void clearcol(long col) override;
     ISparseMatrix* copy() const override;
@@ -41,22 +65,20 @@ class DictMatrix : public ISparseMatrix {
     MapVector<long> getcol_sparse(long col) const override;
     const MapVector<long>& getcol_sparseref(long col) const override;
     void getcol_sparse(long col, MapVector<long> &col_vector) const override;
-    // virtual MapVector<long> getcol_sparse(long col) override;
-    // virtual const MapVector<long>& getcol_sparse(long col) const override;
     std::vector<long> getrow(long row) const override;
     MapVector<long> getrow_sparse(long row) const override;
     void getrow_sparse(long row, MapVector<long> &row_vector) const override;
     const MapVector<long>& getrow_sparseref(long row) const override;
-    // virtual MapVector<long> getrow_sparse(long row) override;
-    // virtual const MapVector<long>& getrow_sparse(long row) const override;
+    /// Exposes a GPU-friendly view of the DenseMatrix.
+    DenseMatrixView gpu_view() const {
+      return DenseMatrixView{this->matrix.data(), this->nrows, this->ncols};
+    }
     EdgeWeights incoming_edges(long block) const override;
     std::set<long> neighbors(long block) const override;
     MapVector<long> neighbors_weights(long block) const override;
     Indices nonzero() const override;
     EdgeWeights outgoing_edges(long block) const override;
-    /// Sets the values in a row equal to the input vector
     void setrow(long row, const MapVector<long> &vector) override;
-    /// Sets the values in a column equal to the input vector
     void setcol(long col, const MapVector<long> &vector) override;
     void sub(long row, long col, long val) override;
     long edges() const override;
@@ -74,14 +96,13 @@ class DictMatrix : public ISparseMatrix {
     std::vector<long> values() const override;
 
   private:
-    // void check_row_bounds(long row);
-    // void check_col_bounds(long col);
-    // long ncols;
-    // long nrows;
-//    std::vector<std::unordered_map<long, long>> matrix;
-    std::vector<MapVector<long>> matrix;
-    // boost::numeric::ublas::mapped_matrix<long> matrix;
-    // boost::numeric::ublas::coordinate_matrix<long> matrix;
+    std::vector<long> matrix;
+    // Ring buffer of 4 slots so concurrent sparseref callers (e.g. the 4 in
+    // delta_mdl) each get a stable reference rather than all sharing one vector.
+    static constexpr size_t SPARSEREF_SLOTS = 4;
+    mutable std::array<MapVector<long>, SPARSEREF_SLOTS> temp_sparse_vectors;
+    mutable size_t temp_vector_idx = 0;
 };
 
-#endif // CPPSBP_PARTITION_SPARSE_DICT_MATRIX_HPP
+#endif // CPPSBP_PARTITION_DENSE_MATRIX_HPP
+

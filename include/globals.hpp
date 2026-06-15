@@ -16,6 +16,12 @@ extern MPI_t mpi;
 /// User-passed arguments
 extern Args args;
 
+/// Returns true when the blockmodel is currently using the dense matrix backend, in which case
+/// consumer code should take the dense compute path (operate on dense getrow/getcol vectors
+/// directly instead of materializing MapVector slices). Reads args.matrix_type live so it tracks
+/// the temporary backend override during split scoring (see split_communities).
+inline bool dense_compute() { return args.matrix_type == "dense"; }
+
 namespace timers {
 
 /// The total amount of time spent performing block merges, to be dynamically updated during execution.

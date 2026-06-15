@@ -129,6 +129,7 @@ void extract_subgraph(const Graph &graph, const Blockmodel &blockmodel, Graph &s
             subgraph.add_edge(translator[vertex], translator[neighbor]);
         }
     }
+    subgraph.build_csr();
 //    return split;
 }
 
@@ -160,6 +161,7 @@ Split propose_split(long cluster, const Graph &graph, const Blockmodel &blockmod
             subgraph.add_edge(split.translator[vertex], split.translator[neighbor]);
         }
     }
+    subgraph.build_csr();
     if (args.split == "random")
         split_assignment = propose_random_split(subgraph);
     else if (args.split == "connectivity-snowball")
@@ -486,7 +488,7 @@ Blockmodel run(const Graph &graph) {
 }
 
 Blockmodel split_communities(Blockmodel &blockmodel, const Graph &graph, int target_num_communities) {
-    bool user_arg = args.no_transpose;
+    std::string user_arg = args.matrix_type; // args.no_transpose;
     int num_blocks = blockmodel.num_blocks();
     std::vector<Split> best_split_for_each_block(num_blocks);
     std::vector<double> delta_entropy_for_each_block =
@@ -495,7 +497,10 @@ Blockmodel split_communities(Blockmodel &blockmodel, const Graph &graph, int tar
     for (int i = 0; i < num_blocks; ++i) {
         omp_init_lock(&locks[i]);
     }
-    args.no_transpose = true;
+    // For dense runs, keep dense so the split-proposal blockmodels use DenseMatrix
+    // and the dense compute path. For all other matrix types, force sparse to avoid
+    // the overhead of transpose maintenance on thousands of throwaway 2-block models.
+    if (user_arg != "dense") args.matrix_type = "sparse";
     double loop_start_t = MPI_Wtime();
     std::vector<Graph> subgraphs(blockmodel.num_blocks());
     std::vector<MapVector<long>> translators(blockmodel.num_blocks());
@@ -533,7 +538,7 @@ Blockmodel split_communities(Blockmodel &blockmodel, const Graph &graph, int tar
         }
     }
     timers::BlockSplit_loop_time += MPI_Wtime() - loop_start_t;
-    args.no_transpose = user_arg;
+    args.matrix_type = user_arg;
     for (int i = 0; i < num_blocks; ++i) {
         omp_destroy_lock(&locks[i]);
     }

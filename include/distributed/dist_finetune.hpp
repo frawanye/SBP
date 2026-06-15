@@ -23,7 +23,7 @@ bool async_move(const Membership &membership, const Graph &graph, TwoHopBlockmod
 /// Runs one iteration of the asynchronous Gibbs algorithm in a distributed fashion using MPI.
 std::vector<Membership> asynchronous_gibbs_iteration(TwoHopBlockmodel &blockmodel, const Graph &graph,
                                                      std::vector<long> *next_assignment = nullptr,
-                                                     MPI_Win mcmc_window = nullptr,
+                                                     MPI_Win mcmc_window = MPI_WIN_NULL,
                                                      const std::vector<long> &active_set = std::vector<long>(),
                                                      int batch = 0);
 
@@ -59,7 +59,7 @@ TwoHopBlockmodel &mcmc(Graph &graph, TwoHopBlockmodel &blockmodel, bool golden_r
 /// Runs one iteration of the Metropolis-Hastings algorithm. Returns the accepted vertex moves.
 std::vector<Membership> metropolis_hastings_iteration(TwoHopBlockmodel &blockmodel, Graph &graph,
                                                       std::vector<long> *next_assignment = nullptr,
-                                                      MPI_Win mcmc_window = nullptr,
+                                                      MPI_Win mcmc_window = MPI_WIN_NULL,
                                                       const std::vector<long> &active_set = std::vector<long>(),
                                                       int batch = -1);
 
@@ -70,12 +70,12 @@ VertexMove propose_gibbs_move(const TwoHopBlockmodel &blockmodel, long vertex, c
 VertexMove propose_mh_move(TwoHopBlockmodel &blockmodel, long vertex, const Graph &graph);
 
 void remote_update_membership(long vertex, long new_block, std::vector<Membership> &membership_updates,
-                              std::vector<long> *next_assignment = nullptr, MPI_Win mcmc_window = nullptr);
+                              std::vector<long> *next_assignment = nullptr, MPI_Win mcmc_window = MPI_WIN_NULL);
 
 void shuffle_active_set(std::vector<long> &active_set);
 
 size_t update_blockmodel(const Graph &graph, TwoHopBlockmodel &blockmodel,
                          const std::vector<Membership> &membership_updates,
-                         std::vector<long> *next_assignment = nullptr, MPI_Win mcmc_window = nullptr);
+                         std::vector<long> *next_assignment = nullptr, MPI_Win mcmc_window = MPI_WIN_NULL);
 
 }  // namespace finetune::dist

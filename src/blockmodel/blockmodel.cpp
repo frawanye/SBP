@@ -175,7 +175,7 @@ Blockmodel Blockmodel::from_sample(long num_blocks, const Graph &graph, std::vec
         }
         std::vector<long> block_counts = utils::constant<long>(num_blocks, 0);
         // TODO: this can only handle unweighted graphs
-        std::vector<long> vertex_neighbors = graph.out_neighbors(vertex);  // [vertex];
+        std::vector<long> vertex_neighbors = graph.out_neighbors(vertex).to_vector();
         for (size_t i = 0; i < vertex_neighbors.size(); ++i) {
             long neighbor = vertex_neighbors[i];
             long neighbor_block = _block_assignment[neighbor];
@@ -196,9 +196,11 @@ void Blockmodel::initialize_edge_counts(const Graph &graph) {  // Parallel versi
     /// TODO: this recreates the matrix (possibly unnecessary)
     std::shared_ptr<ISparseMatrix> blockmatrix;
     long num_buckets = graph.num_edges() / graph.num_vertices();
-    if (args.no_transpose) {
+    if (args.matrix_type == "dense") {
+        blockmatrix = std::make_shared<DenseMatrix>(this->_num_blocks, this->_num_blocks);
+    } else if (args.matrix_type == "sparse") {
         blockmatrix = std::make_shared<DictMatrix>(this->_num_blocks, this->_num_blocks);
-    } else {
+    } else {  // sparse_transpose
         blockmatrix = std::make_shared<DictTransposeMatrix>(this->_num_blocks, this->_num_blocks, num_buckets);
     }
     // This may or may not be faster with push_backs. TODO: test init & fill vs push_back
@@ -231,27 +233,21 @@ void Blockmodel::initialize_edge_counts(const Graph &graph) {  // Parallel versi
                 this->_num_nonempty_blocks++;
             }
             block_sizes[block]++;
-            out_degree_histogram[block][graph.out_neighbors(long(vertex)).size()]++;
-            in_degree_histogram[block][graph.in_neighbors(long(vertex)).size()]++;
-            for (long neighbor : graph.out_neighbors(long(vertex))) {  // vertex_neighbors) {
-//                size_t i = 0; i < vertex_neighbors.size(); ++i) {
-                // Get count
-//                long neighbor = vertex_neighbors[i];
+            const auto out_nb = graph.out_neighbors(long(vertex));
+            const auto in_nb  = graph.in_neighbors(long(vertex));
+            out_degree_histogram[block][out_nb.size()]++;
+            in_degree_histogram[block][in_nb.size()]++;
+            for (long neighbor : out_nb) {
                 long neighbor_block = this->_block_assignment[neighbor];
-                // TODO: change this once code is updated to support weighted graphs
                 long weight = 1;
-                // long weight = vertex_neighbors[i];
-                // Update blockmodel
                 blockmatrix->add(block, neighbor_block, weight);
-                // Update degrees
                 block_degrees_out[block] += weight;
                 block_degrees[block] += weight;
-//            }
             }
-            for (long neighbor : graph.in_neighbors(long(vertex))) {
+            for (long neighbor : in_nb) {
                 long neighbor_block = this->_block_assignment[neighbor];
                 long weight = 1;
-                if (!args.no_transpose) {
+                if (args.matrix_type == "sparse_transpose") {
                     std::shared_ptr<DictTransposeMatrix> blockmatrix_dtm = std::dynamic_pointer_cast<DictTransposeMatrix>(blockmatrix);
                     blockmatrix_dtm->add_transpose(neighbor_block, block, weight);
                 }
@@ -448,7 +444,7 @@ bool Blockmodel::move_vertex(const VertexMove_v3 &move) {
         this->_block_degrees_out[move.proposed_block]++;
         if (out_vertex == move.vertex.id) {  // handle self edge
             this->_blockmatrix->add(move.proposed_block, move.proposed_block, 1);
-            if (!args.no_transpose) {
+            if (args.matrix_type == "sparse_transpose") {
                 std::shared_ptr<DictTransposeMatrix> blockmatrix_dtm =
                         std::dynamic_pointer_cast<DictTransposeMatrix>(this->_blockmatrix);
                 blockmatrix_dtm->add_transpose(move.proposed_block, move.proposed_block, 1);
@@ -457,7 +453,7 @@ bool Blockmodel::move_vertex(const VertexMove_v3 &move) {
             this->_block_degrees_in[move.proposed_block]++;
         } else {
             this->_blockmatrix->add(move.proposed_block, out_block, 1);
-            if (!args.no_transpose) {
+            if (args.matrix_type == "sparse_transpose") {
                 std::shared_ptr<DictTransposeMatrix> blockmatrix_dtm =
                         std::dynamic_pointer_cast<DictTransposeMatrix>(this->_blockmatrix);
                 blockmatrix_dtm->add_transpose(move.proposed_block, out_block, 1);
@@ -469,7 +465,7 @@ bool Blockmodel::move_vertex(const VertexMove_v3 &move) {
         this->_blockmatrix->sub(in_block, current_block, 1);
         this->_block_degrees_in[current_block]--;
         this->_blockmatrix->add(in_block, move.proposed_block, 1);
-        if (!args.no_transpose) {
+        if (args.matrix_type == "sparse_transpose") {
             std::shared_ptr<DictTransposeMatrix> blockmatrix_dtm = std::dynamic_pointer_cast<DictTransposeMatrix>(this->_blockmatrix);
             blockmatrix_dtm->add_transpose(in_block, move.proposed_block, 1);
         }
