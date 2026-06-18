@@ -35,21 +35,18 @@ class CSR {
 
     /// Build from an adjacency list.
     CSR(const NeighborList &neighbor_list, long num_vertices, long num_edges) {
-        nrows = num_vertices;
+        nrows  = num_vertices;
+        nedges = num_edges;
 
-        row_ptrs = new long[nrows + 1]();   // zero-initialised
-        // Count edges per row (row_ptrs temporarily holds counts in [1..nrows])
-        for (long v = 0; v < nrows; ++v) {
-            row_ptrs[v + 1] = static_cast<long>(neighbor_list[v].size());
-        }
-        // Prefix-sum to produce final row pointers
-        for (long v = 0; v < nrows; ++v) {
-            row_ptrs[v + 1] += row_ptrs[v];
-        }
-        nedges = row_ptrs[nrows];
-
+        row_ptrs    = new long[nrows + 1]();   // zero-initialised
         col_indices = new long[nedges];
         vals        = new long[nedges];
+
+        // Prefix-sum the per-row degrees directly into the row pointers
+        // (row_ptrs[0] is already 0 from the zero-initialised allocation).
+        for (long v = 0; v < nrows; ++v) {
+            row_ptrs[v + 1] = row_ptrs[v] + static_cast<long>(neighbor_list[v].size());
+        }
 
         long pos = 0;
         for (long v = 0; v < nrows; ++v) {
