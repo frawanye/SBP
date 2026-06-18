@@ -1,57 +1,114 @@
 /***
  * Sparse adjacency matrix in CSR format, for graph (not blockmodel) storage.
- * Designed for future GPU offloading via OpenMP target map on MI300A.
+ * Designed for GPU offloading via OpenMP target map on MI300A.
+ *
+ * Storage is raw long* arrays so that read-only methods can be marked
+ * `declare target` and called from inside omp target regions without
+ * involving std::vector on the device.  All memory management lives in the
+ * host-only special members (rule of five).
  */
 #ifndef SBP_MATRIX_CSR_HPP
 #define SBP_MATRIX_CSR_HPP
 
-#include <vector>
+#include <algorithm>  // std::copy
 #include "typedefs.hpp"
 
 /**
  * CSR-format adjacency matrix for a graph.
  *
- * Three contiguous arrays of equal or related length:
- *   row_ptrs   : size V+1  — row_ptrs[v]..row_ptrs[v+1] is the range for vertex v
- *   col_indices: size E    — destination vertices in row order
- *   vals       : size E    — edge weights, parallel to col_indices (filled with 1
- *                            for unweighted graphs; ready for weighted edges later)
+ * Three contiguous arrays:
+ *   row_ptrs   : size nrows+1 — row_ptrs[v]..row_ptrs[v+1] is the range for vertex v
+ *   col_indices: size nedges  — destination vertices in row order
+ *   vals       : size nedges  — edge weights (1 for unweighted graphs)
  *
- * All three expose .data() for direct use with `#pragma omp target map`.
+ * Read-only methods are declared target so a const CSR& can be used inside
+ * #pragma omp target regions under unified_shared_memory.
+ * Constructors / destructor / copy / move are host-only and use new[]/delete[].
  */
 class CSR {
   public:
+    // -----------------------------------------------------------------------
+    // Constructors / destructor / copy / move  (host-only, NOT declare target)
+    // -----------------------------------------------------------------------
+
     CSR() = default;
 
-    /// Build from an adjacency list. Edges are stored in the order they appear
-    /// in each row of neighbor_list.
+    /// Build from an adjacency list.
     CSR(const NeighborList &neighbor_list, long num_vertices, long num_edges) {
-        row_ptrs.resize(num_vertices + 1, 0);
-        col_indices.reserve(num_edges);
-        vals.reserve(num_edges);
+        nrows = num_vertices;
 
-        // Count edges per row (row_ptrs will hold counts temporarily)
-        for (long v = 0; v < num_vertices; ++v) {
+        row_ptrs = new long[nrows + 1]();   // zero-initialised
+        // Count edges per row (row_ptrs temporarily holds counts in [1..nrows])
+        for (long v = 0; v < nrows; ++v) {
             row_ptrs[v + 1] = static_cast<long>(neighbor_list[v].size());
         }
         // Prefix-sum to produce final row pointers
-        for (long v = 0; v < num_vertices; ++v) {
+        for (long v = 0; v < nrows; ++v) {
             row_ptrs[v + 1] += row_ptrs[v];
         }
-        // Fill col_indices and vals
-        for (long v = 0; v < num_vertices; ++v) {
+        nedges = row_ptrs[nrows];
+
+        col_indices = new long[nedges];
+        vals        = new long[nedges];
+
+        long pos = 0;
+        for (long v = 0; v < nrows; ++v) {
             for (const long neighbor : neighbor_list[v]) {
-                col_indices.push_back(neighbor);
-                vals.push_back(1);
+                col_indices[pos] = neighbor;
+                vals[pos]        = 1;
+                ++pos;
             }
         }
     }
 
+    ~CSR() {
+        delete[] row_ptrs;
+        delete[] col_indices;
+        delete[] vals;
+    }
+
+    CSR(const CSR &other) : nrows(other.nrows), nedges(other.nedges) {
+        if (other.row_ptrs) {
+            row_ptrs = new long[nrows + 1];
+            std::copy(other.row_ptrs, other.row_ptrs + nrows + 1, row_ptrs);
+        }
+        if (other.col_indices) {
+            col_indices = new long[nedges];
+            std::copy(other.col_indices, other.col_indices + nedges, col_indices);
+        }
+        if (other.vals) {
+            vals = new long[nedges];
+            std::copy(other.vals, other.vals + nedges, vals);
+        }
+    }
+
+    /// Handles both copy and move assignment via copy-and-swap.
+    CSR &operator=(CSR other) noexcept {
+        swap(*this, other);
+        return *this;
+    }
+
+    CSR(CSR &&other) noexcept
+        : row_ptrs(other.row_ptrs), col_indices(other.col_indices),
+          vals(other.vals), nrows(other.nrows), nedges(other.nedges) {
+        other.row_ptrs    = nullptr;
+        other.col_indices = nullptr;
+        other.vals        = nullptr;
+        other.nrows       = 0;
+        other.nedges      = 0;
+    }
+
+    // -----------------------------------------------------------------------
+    // Device-callable read-only API
+    // -----------------------------------------------------------------------
+
+#pragma omp begin declare target
+
     /// Number of rows (vertices).
-    long num_rows() const { return static_cast<long>(row_ptrs.size()) - 1; }
+    long num_rows() const { return nrows; }
 
     /// Number of stored entries (edges).
-    long nnz() const { return static_cast<long>(col_indices.size()); }
+    long nnz() const { return nedges; }
 
     /// Out-degree of vertex v.
     long degree(long v) const {
@@ -60,20 +117,38 @@ class CSR {
 
     /// View of the neighbors of vertex v (col-index array slice).
     NeighborView neighbors(long v) const {
-        return NeighborView(col_indices.data() + row_ptrs[v],
+        return NeighborView(col_indices + row_ptrs[v],
                             row_ptrs[v + 1] - row_ptrs[v]);
     }
 
-    /// Raw pointer to row_ptrs array (for omp target map).
-    const long* row_ptrs_data() const { return row_ptrs.data(); }
-    /// Raw pointer to col_indices array (for omp target map).
-    const long* col_indices_data() const { return col_indices.data(); }
-    /// Raw pointer to vals array (for omp target map).
-    const long* vals_data() const { return vals.data(); }
+    /// Raw pointer to row_ptrs array.
+    const long* row_ptrs_data()    const { return row_ptrs; }
+    /// Raw pointer to col_indices array.
+    const long* col_indices_data() const { return col_indices; }
+    /// Raw pointer to vals array.
+    const long* vals_data()        const { return vals; }
 
-    std::vector<long> row_ptrs;
-    std::vector<long> col_indices;
-    std::vector<long> vals;
+#pragma omp end declare target
+
+    // -----------------------------------------------------------------------
+    // Data members (public for legacy USM host-pointer access if ever needed)
+    // -----------------------------------------------------------------------
+
+    long* row_ptrs    = nullptr;   // size nrows+1
+    long* col_indices = nullptr;   // size nedges
+    long* vals        = nullptr;   // size nedges
+    long  nrows       = 0;
+    long  nedges      = 0;
+
+  private:
+    friend void swap(CSR &a, CSR &b) noexcept {
+        using std::swap;
+        swap(a.row_ptrs,    b.row_ptrs);
+        swap(a.col_indices, b.col_indices);
+        swap(a.vals,        b.vals);
+        swap(a.nrows,       b.nrows);
+        swap(a.nedges,      b.nedges);
+    }
 };
 
 #endif // SBP_MATRIX_CSR_HPP

@@ -28,7 +28,7 @@ TEST_F(SampleTest, MaxDegreeSamplingIsCorrect) {
     EXPECT_EQ(s.graph.num_vertices(), 4);
     for (long v = 0; v < s.graph.num_vertices(); ++v) {
         std::cout << "v = " << v << ": ";
-        utils::print<long>(s.graph.out_neighbors(v).to_vector());
+        utils::print<long>(to_vector(s.graph.out_neighbors(v)));
     }
     EXPECT_EQ(s.graph.num_edges(), 5);
     EXPECT_EQ(s.mapping.size(), graph.num_vertices());

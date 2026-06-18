@@ -70,9 +70,13 @@ typedef std::vector<std::vector<long>> NeighborList;
 
 /**
  * Non-owning view into a contiguous range of neighbor ids (a row of a CSR matrix).
- * Supports range-for, .size(), operator[], .empty(), and .to_vector().
+ * Supports range-for, .size(), operator[], .empty(), and to_vector() (free function).
  * Lifetime is bound to the CSR object that owns the underlying array.
+ *
+ * The struct itself and all pure-pointer accessors are declared target so they
+ * can be used inside #pragma omp target regions.  to_vector() is host-only.
  */
+#pragma omp begin declare target
 struct NeighborView {
     NeighborView() : ptr(nullptr), len(0) {}
     NeighborView(const long* ptr, long len) : ptr(ptr), len(len) {}
@@ -83,14 +87,15 @@ struct NeighborView {
     bool empty()        const { return len == 0; }
     const long& operator[](long i) const { return ptr[i]; }
 
-    /// Copy into a new std::vector<long>.
-    std::vector<long> to_vector() const {
-        return std::vector<long>(ptr, ptr + len);
-    }
-
     const long* ptr;
     long len;
 };
+#pragma omp end declare target
+
+/// Copy a NeighborView into a new std::vector<long> (host-only).
+inline std::vector<long> to_vector(const NeighborView &v) {
+    return std::vector<long>(v.ptr, v.ptr + v.len);
+}
 
 template <typename T>
 struct SparseVector {
@@ -168,6 +173,13 @@ struct VertexMove_v3 {
     long proposed_block;
     EdgeWeights out_edges;
     EdgeWeights in_edges;
+};
+
+struct VertexMoveGPU {
+    double delta_entropy;
+    bool did_move;
+    Vertex vertex;
+    long proposed_block;
 };
 
 typedef std::unordered_map<std::pair<long, long>, long, longPairHash> PairIndexVector;

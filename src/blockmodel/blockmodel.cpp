@@ -175,7 +175,7 @@ Blockmodel Blockmodel::from_sample(long num_blocks, const Graph &graph, std::vec
         }
         std::vector<long> block_counts = utils::constant<long>(num_blocks, 0);
         // TODO: this can only handle unweighted graphs
-        std::vector<long> vertex_neighbors = graph.out_neighbors(vertex).to_vector();
+        std::vector<long> vertex_neighbors = to_vector(graph.out_neighbors(vertex));
         for (size_t i = 0; i < vertex_neighbors.size(); ++i) {
             long neighbor = vertex_neighbors[i];
             long neighbor_block = _block_assignment[neighbor];
@@ -428,6 +428,11 @@ void Blockmodel::move_vertex(Vertex vertex, const Delta &delta, utils::ProposalA
     this->_in_degree_histogram[delta.current_block()][proposal.num_in_neighbor_edges]--;
     this->_out_degree_histogram[delta.proposed_block()][proposal.num_out_neighbor_edges]++;
     this->_in_degree_histogram[delta.proposed_block()][proposal.num_in_neighbor_edges]++;
+}
+
+bool Blockmodel::move_vertex_gpu(const VertexMoveGPU &move, EdgeWeights &out_edges, EdgeWeights &in_edges) {
+    VertexMove_v3 vertex_move = { move.delta_entropy, move.did_move, move.vertex, move.proposed_block, out_edges, in_edges };
+    return move_vertex(vertex_move);
 }
 
 bool Blockmodel::move_vertex(const VertexMove_v3 &move) {
