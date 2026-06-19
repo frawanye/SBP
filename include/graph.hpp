@@ -48,7 +48,10 @@ public:
         this->sort_vertices();
     }
     Graph() = default;
-    virtual ~Graph() = default;
+    virtual ~Graph();
+    Graph(const Graph &other);
+    Graph(Graph &&other) noexcept;
+    Graph &operator=(Graph other) noexcept;
     /// Loads the graph from file (TSV or MTX format).
     static Graph load();
     /// Loads the graph if it's in a matrix market format.
@@ -109,6 +112,7 @@ public:
     [[nodiscard]] std::vector<std::pair<std::pair<long, long>, long>> sorted_edge_list() const;
     /// Sorts vertices into low and high influence vertices via vertex degree products.
     void degree_product_sort();
+    friend void swap(Graph &a, Graph &b) noexcept;
 protected:
     /// For every vertex, stores the community they belong to.
     /// If assignment[v] = -1, then the community of v is not known

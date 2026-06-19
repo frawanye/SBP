@@ -1,10 +1,106 @@
 #include "graph.hpp"
 
+#include <algorithm>
 #include "mpi.h"
 
 #include "globals.hpp"
 #include "utils.hpp"
 #include "mpi_data.hpp"
+
+// ---------------------------------------------------------------------------
+// File-local CSR helpers (host-only; not part of the CSR or Graph API)
+// ---------------------------------------------------------------------------
+
+/// Release the three arrays owned through a CSR handle.  Safe on null pointers.
+static void free_csr(CSR &csr) {
+    delete[] csr.row_ptrs;
+    delete[] csr.col_indices;
+    delete[] csr.vals;
+    csr.row_ptrs = csr.col_indices = csr.vals = nullptr;
+    csr.nrows = csr.nedges = 0;
+}
+
+/// Deep-copy src into a fresh CSR (new[] arrays).
+static CSR copy_csr(const CSR &src) {
+    CSR dst;
+    dst.nrows  = src.nrows;
+    dst.nedges = src.nedges;
+    if (src.row_ptrs) {
+        dst.row_ptrs = new long[src.nrows + 1];
+        std::copy(src.row_ptrs, src.row_ptrs + src.nrows + 1, dst.row_ptrs);
+    }
+    if (src.col_indices) {
+        dst.col_indices = new long[src.nedges];
+        std::copy(src.col_indices, src.col_indices + src.nedges, dst.col_indices);
+    }
+    if (src.vals) {
+        dst.vals = new long[src.nedges];
+        std::copy(src.vals, src.vals + src.nedges, dst.vals);
+    }
+    return dst;
+}
+
+/// Allocate and fill csr in place from an adjacency list.  Frees any existing
+/// arrays first so it is safe to call on an already-built CSR.
+static void build_csr_matrix(CSR &csr, const NeighborList &nl, long nv, long ne) {
+    free_csr(csr);
+    csr.nrows  = nv;
+    csr.nedges = ne;
+    csr.row_ptrs    = new long[nv + 1]();   // zero-initialised
+    csr.col_indices = new long[ne];
+    csr.vals        = new long[ne];
+    for (long v = 0; v < nv; ++v)
+        csr.row_ptrs[v + 1] = csr.row_ptrs[v] + static_cast<long>(nl[v].size());
+    long pos = 0;
+    for (long v = 0; v < nv; ++v)
+        for (long neighbor : nl[v]) { csr.col_indices[pos] = neighbor; csr.vals[pos] = 1; ++pos; }
+}
+
+// ---------------------------------------------------------------------------
+// Graph rule of five
+// ---------------------------------------------------------------------------
+
+Graph::~Graph() {
+    free_csr(this->_out_csr);
+    free_csr(this->_in_csr);
+}
+
+Graph::Graph(const Graph &other)
+    : _assignment(other._assignment),
+      _high_degree_vertices(other._high_degree_vertices),
+      _low_degree_vertices(other._low_degree_vertices),
+      _out_staging(other._out_staging),
+      _in_staging(other._in_staging),
+      _out_csr(copy_csr(other._out_csr)),
+      _in_csr(copy_csr(other._in_csr)),
+      _num_vertices(other._num_vertices),
+      _num_edges(other._num_edges),
+      _self_edges(other._self_edges) {}
+
+Graph::Graph(Graph &&other) noexcept : Graph() {
+    swap(*this, other);
+}
+
+Graph &Graph::operator=(Graph other) noexcept {
+    swap(*this, other);
+    return *this;
+}
+
+void swap(Graph &a, Graph &b) noexcept {
+    using std::swap;
+    swap(a._assignment,           b._assignment);
+    swap(a._high_degree_vertices, b._high_degree_vertices);
+    swap(a._low_degree_vertices,  b._low_degree_vertices);
+    swap(a._out_staging,          b._out_staging);
+    swap(a._in_staging,           b._in_staging);
+    swap(a._out_csr,              b._out_csr);
+    swap(a._in_csr,               b._in_csr);
+    swap(a._num_vertices,         b._num_vertices);
+    swap(a._num_edges,            b._num_edges);
+    swap(a._self_edges,           b._self_edges);
+}
+
+// ---------------------------------------------------------------------------
 
 void Graph::add_edge(long from, long to) {
     utils::insert(this->_out_staging, from, to);
@@ -18,8 +114,8 @@ void Graph::add_edge(long from, long to) {
 
 void Graph::build_csr() {
     if (!args.csrgraph) return;  // NL mode: keep staging as the permanent store
-    this->_out_csr = CSR(this->_out_staging, this->_num_vertices, this->_num_edges);
-    this->_in_csr  = CSR(this->_in_staging,  this->_num_vertices, this->_num_edges);
+    build_csr_matrix(this->_out_csr, this->_out_staging, this->_num_vertices, this->_num_edges);
+    build_csr_matrix(this->_in_csr,  this->_in_staging,  this->_num_vertices, this->_num_edges);
     this->_out_staging.clear();
     this->_out_staging.shrink_to_fit();
     this->_in_staging.clear();
