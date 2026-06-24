@@ -68,35 +68,6 @@ struct longPairHash {
 
 typedef std::vector<std::vector<long>> NeighborList;
 
-/**
- * Non-owning view into a contiguous range of neighbor ids (a row of a CSR matrix).
- * Supports range-for, .size(), operator[], .empty(), and to_vector() (free function).
- * Lifetime is bound to the CSR object that owns the underlying array.
- *
- * The struct itself and all pure-pointer accessors are declared target so they
- * can be used inside #pragma omp target regions.  to_vector() is host-only.
- */
-#pragma omp begin declare target
-struct NeighborView {
-    NeighborView() : ptr(nullptr), len(0) {}
-    NeighborView(const long* ptr, long len) : ptr(ptr), len(len) {}
-
-    const long* begin() const { return ptr; }
-    const long* end()   const { return ptr + len; }
-    long size()         const { return len; }
-    bool empty()        const { return len == 0; }
-    const long& operator[](long i) const { return ptr[i]; }
-
-    const long* ptr;
-    long len;
-};
-#pragma omp end declare target
-
-/// Copy a NeighborView into a new std::vector<long> (host-only).
-inline std::vector<long> to_vector(const NeighborView &v) {
-    return std::vector<long>(v.ptr, v.ptr + v.len);
-}
-
 template <typename T>
 struct SparseVector {
     std::vector<long>    idx;   // The index of the corresponding element in data
@@ -146,7 +117,90 @@ struct Vertex {
     long in_degree;  // maybe add self-edge? that way, degree = out_degree + in_degree - self_edge..., but I don't think that we need total degree
 };
 
+#pragma omp begin declare target
+/**
+ * Non-owning view into a contiguous range of neighbor ids and their edge weights
+ * (a row of a CSR matrix).
+ *
+ * Supports range-for (over indices), .size(), operator[], .empty(), val(i), and
+ * to_vector() (free function, host-only, copies indices).
+ * Lifetime is bound to the CSR object that owns the underlying arrays.
+ *
+ * The struct and all pure-pointer accessors are declared target so they can be
+ * used inside #pragma omp target regions.  to_vector() is host-only.
+ *
+ * --- Weight semantics ---
+ * `vals` is allowed to be nullptr (staging / NL-mode path has no weight array).
+ * val(i) returns vals[i] when vals is set, otherwise 1.  This means unweighted
+ * graphs and the staging code path produce weight 1 for every edge, identical to
+ * the previous behaviour, without any additional branches in callers.
+ *
+ * The READ side is now weighted-ready.  To complete full weighted-graph support
+ * the following ingest/storage work is still needed (in dependency order):
+ *
+ *  1. Ingest weights at source.  Extend the loaders (src/graph.cpp load_text /
+ *     load_matrix_market, around lines 217, 299, 323) to read a third weight
+ *     column when present.  MatrixMarket already has a value field; TSV needs a
+ *     "from to weight" form, defaulting to 1 when absent.  Gate on an
+ *     --weighted flag or auto-detect column count.
+ *
+ *  2. Carry weight through add_edge.  Change Graph::add_edge(long from, long to)
+ *     (src/graph.cpp:105) to add_edge(long from, long to, long weight = 1).
+ *     All existing callers keep compiling via the default.
+ *
+ *  3. Give the staging store somewhere to hold weights.  NeighborList
+ *     (typedefs.hpp:69) is std::vector<std::vector<long>> — indices only.  Add
+ *     parallel _out_staging_vals / _in_staging_vals of the same type to Graph,
+ *     and have utils::insert push the weight in lockstep with the index.
+ *
+ *  4. Populate csr.vals for real.  In build_csr_matrix (src/graph.cpp:56)
+ *     replace `csr.vals[pos] = 1` with the staged weight.  copy_csr already
+ *     deep-copies vals, so the rule-of-five is fine.
+ *
+ *  5. Wire the NL-mode (non-csrgraph) staging path.  Once staging holds weights,
+ *     update Graph::in_neighbors / out_neighbors (graph.hpp:82-83, 102-103) to
+ *     call the 3-arg NeighborView ctor with the staged weight pointer instead of
+ *     the 2-arg ctor, so val(i) returns real weights instead of the nullptr=>1
+ *     fallback.
+ *
+ *  6. Audit weight-aware consumers.  degree() / num_edges() semantics (edge count
+ *     vs. summed weight), modularity() (src/graph.cpp ~line 260, currently sets
+ *     edge_weight = 1), and any sampling/blockmodel code that assumes unit edges.
+ *     edge_weights() (src/finetune.cpp) is already correct after this task.
+ *
+ *  7. Type widths.  vals is `long`; fractional weights would require templating
+ *     CSR / NeighborView / EdgeWeights.  Out of scope but worth planning early.
+ */
+struct NeighborView {
+    /// Constructs an empty view (no indices, no weights).
+    NeighborView() : ptr(nullptr), vals(nullptr), len(0) {}
+    /// Constructs an index-only view (used by the NL-mode / staging path, which
+    /// has no weight array; val(i) returns 1 for all i).
+    NeighborView(const long* ptr, long len) : ptr(ptr), vals(nullptr), len(len) {}
+    /// Constructs a view with both indices and weights (CSR path).
+    NeighborView(const long* ptr, const long* vals, long len) : ptr(ptr), vals(vals), len(len) {}
+
+    const long* begin() const { return ptr; }
+    const long* end()   const { return ptr + len; }
+    long size()         const { return len; }
+    bool empty()        const { return len == 0; }
+    const long& operator[](long i) const { return ptr[i]; }
+    /// Returns the edge weight for the i-th neighbor.  Returns 1 if no weight
+    /// array was provided (unweighted / staging path).
+    long val(long i)    const { return vals ? vals[i] : 1; }
+
+    const long* ptr;
+    const long* vals;
+    long len;
+};
+
 const Vertex InvalidVertex { -1, 0, 0 };
+#pragma omp end declare target
+
+/// Copy a NeighborView into a new std::vector<long> (host-only).
+inline std::vector<long> to_vector(const NeighborView &v) {
+    return std::vector<long>(v.ptr, v.ptr + v.len);
+}
 
 //const Membership NullMembership { -1, -1 };
 

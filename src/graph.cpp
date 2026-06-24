@@ -53,6 +53,8 @@ static void build_csr_matrix(CSR &csr, const NeighborList &nl, long nv, long ne)
         csr.row_ptrs[v + 1] = csr.row_ptrs[v] + static_cast<long>(nl[v].size());
     long pos = 0;
     for (long v = 0; v < nv; ++v)
+        // TODO (weighted graphs): replace `1` with the staged weight once staging
+        // carries per-edge weights (see NeighborView doc comment, step 4).
         for (long neighbor : nl[v]) { csr.col_indices[pos] = neighbor; csr.vals[pos] = 1; ++pos; }
 }
 

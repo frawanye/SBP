@@ -419,11 +419,11 @@ void edge_count_updates_sparse(const Blockmodel &blockmodel, long vertex, long c
 EdgeWeights edge_weights(const NeighborView &neighbors, long vertex, bool ignore_self) {
     std::vector<long> indices;
     std::vector<long> values;
-    // Assumes graph is unweighted
-    for (const long neighbor : neighbors) {
+    for (long i = 0; i < neighbors.size(); ++i) {
+        long neighbor = neighbors[i];
         if (ignore_self && neighbor == vertex) continue;
         indices.push_back(neighbor);
-        values.push_back(1);
+        values.push_back(neighbors.val(i));
     }
     return EdgeWeights{indices, values};
 }
