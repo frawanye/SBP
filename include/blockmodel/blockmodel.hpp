@@ -10,6 +10,8 @@
 #include <map>
 #include <memory>
 #include <queue>
+#include <stdexcept>
+#include <type_traits>
 
 // #include <Eigen/Core>
 // #include "sparse/boost_mapped_matrix.hpp"
@@ -42,6 +44,61 @@ typedef struct sparse_edge_count_updates_t {
     MapVector<long> block_col;
     MapVector<long> proposal_col;
 } SparseEdgeCountUpdates;
+
+/// GPU-friendly, trivially-copyable view of a Blockmodel backed by a DenseMatrix.
+/// All members are raw pointers or scalars so the struct can be mapped into an
+/// omp target region without triggering -Wopenmp-mapping warnings.
+/// Obtain via Blockmodel::gpu_view(); only valid when --matrix_type=dense.
+#pragma omp begin declare target
+struct BlockmodelGPUView {
+    // Dense blockmatrix backing array (row-major, nrows == ncols == num_blocks)
+    const long* matrix;
+    long nrows;
+    long ncols;
+    // Vertex-to-block assignment
+    const long* _block_assignment;
+    long num_vertices;
+    // Block degree arrays
+    const long* block_degrees;
+    const long* block_degrees_in;
+    const long* block_degrees_out;
+    // Block sizes
+    const long* block_sizes;
+    // Scalar counts
+    long _num_blocks;
+    long _num_nonempty_blocks;
+
+    // ---- Scalar accessors (match Blockmodel method names) ----
+    long block_assignment(long v)   const { return _block_assignment[v]; }
+    long num_blocks()               const { return _num_blocks; }
+    long num_nonempty_blocks()      const { return _num_nonempty_blocks; }
+    long block_size(long b)         const { return block_sizes[b]; }
+    long degrees(long b)            const { return block_degrees[b]; }
+    long degrees_in(long b)         const { return block_degrees_in[b]; }
+    long degrees_out(long b)        const { return block_degrees_out[b]; }
+
+    // ---- Blockmatrix accessors ----
+    /// Element access: matrix[r][c]
+    long get(long r, long c) const { return matrix[r * ncols + c]; }
+    /// Pointer to the start of row r (contiguous, stride 1). Replaces getrow().
+    const long* row_ptr(long r) const { return matrix + r * ncols; }
+    /// Element at column c of row r (strided). Replaces getcol()[r].
+    long col(long c, long r) const { return matrix[r * ncols + c]; }
+    /// Populates `result` (size >= num_blocks, pre-zeroed) with the weighted
+    /// neighbors of `block`, mirroring DenseMatrixView::neighbors_weights.
+    /// Outgoing edges come from the row; incoming edges from the column,
+    /// excluding the diagonal to avoid double-counting the self-edge.
+    void neighbors_weights(long* result, long block) const {
+        for (long c = 0; c < ncols; ++c)
+            result[c] += matrix[block * ncols + c];
+        for (long r = 0; r < nrows; ++r)
+            result[r] += matrix[r * ncols + block] * (long)(r != block);
+    }
+};
+#pragma omp end declare target
+
+static_assert(std::is_trivially_copyable_v<BlockmodelGPUView>,
+              "BlockmodelGPUView must stay trivially copyable for GPU mapping");
 
 // TODO: make a Blockmodel interface (?) Or keep Blockmodel pointers in memory
 class Blockmodel {
@@ -152,6 +209,28 @@ class Blockmodel {
     /// TODO: Get rid of getters and setters?
     std::shared_ptr<ISparseMatrix> blockmatrix() const { return this->_blockmatrix; }
 //    ISparseMatrix *blockmatrix() const { return this->_blockmatrix; }
+    /// Returns a GPU-friendly view of this blockmodel. Only valid when the
+    /// blockmatrix is a DenseMatrix (--matrix_type=dense); throws otherwise.
+    BlockmodelGPUView gpu_view() const {
+        const DenseMatrix* dense = dynamic_cast<const DenseMatrix*>(this->_blockmatrix.get());
+        if (!dense)
+            throw std::runtime_error(
+                "BlockmodelGPUView requires a dense blockmatrix (--matrix_type=dense)");
+        DenseMatrixView dmv = dense->gpu_view();
+        return BlockmodelGPUView{
+            dmv.data,
+            dmv.nrows,
+            dmv.ncols,
+            this->_block_assignment.data(),
+            (long)this->_block_assignment.size(),
+            this->_block_degrees.data(),
+            this->_block_degrees_in.data(),
+            this->_block_degrees_out.data(),
+            this->_block_sizes.data(),
+            this->_num_blocks,
+            this->_num_nonempty_blocks
+        };
+    }
     /// Returns true if `block1` is a neighbor of `block2`.
     bool is_neighbor_of(long block1, long block2) const;
     /// Returns the percentage of edges occurring between blocks.
