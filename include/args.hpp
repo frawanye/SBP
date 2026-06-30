@@ -68,7 +68,7 @@ public:  // Everything in here is public, because why not?
             TCLAP::ValueArg<std::string> _algorithm("a", "algorithm", "The algorithm to use for the finetuning/MCMC "
                                                     "step of stochastic block blockmodeling. Note: there is currently no "
                                                     "parallel implementation of metropolis hastings", false,
-                                                    "hybrid_mcmc", "async_gibbs|metropolis_hastings|hybrid_mcmc", parser);
+                                                    "hybrid_mcmc", "async_gibbs|async_gibbs_gpu|metropolis_hastings|hybrid_mcmc", parser);
             TCLAP::SwitchArg _approximate("", "approximate", "If set, an approximate version of the block merge "
                                           "step will be used. It's slightly faster, but less accurate for complex "
                                           "graphs.", parser, false);
@@ -217,6 +217,13 @@ public:  // Everything in here is public, because why not?
             this->matrix_type = _matrix_type.getValue();
             this->type = _type.getValue();
             this->undirected = _undirected.getValue();
+            if (this->algorithm == "async_gibbs_gpu") {
+                std::cout << "NOTE: async_gibbs_gpu requires GPU-compatible settings; "
+                             "forcing nonparametric, --csrgraph, --matrix_type=dense" << std::endl;
+                this->parametric = false;
+                this->csrgraph = true;
+                this->matrix_type = "dense";
+            }
             if (!this->parametric) {
                 std::cout << "NOTE: using nonparametric entropy, Hastings correction disabled (greedy mode)" << std::endl;
                 this->hastings_correction = false;

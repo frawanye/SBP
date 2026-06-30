@@ -127,6 +127,7 @@ cursor_files/
 # CMake stuff
 cmake-build-debug/
 cmake-*/
+compile_commands.json
 
 # Data and trial runs
 **/eval
@@ -154,3 +155,5 @@ tmp
 output
 runs
 build*
+cursor-runs
+cursor_files

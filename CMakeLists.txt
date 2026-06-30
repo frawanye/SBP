@@ -44,9 +44,11 @@ add_library(SBPLIB STATIC
         src/utils.cpp
         src/sbp.cpp
         src/entropy.cpp
+        src/entropy_gpu.cpp
         src/evaluate.cpp
         src/common.cpp
         src/finetune.cpp
+        src/finetune_gpu.cpp
         src/globals.cpp
         src/block_merge.cpp
         src/partition.cpp
@@ -95,7 +97,7 @@ else()
     message("Compiling without debug options")
 endif()
 
-target_compile_options(SBPLIB PUBLIC -Wall -no-pie -fopenmp "${COMPILE_OPTS}")
+target_compile_options(SBPLIB PUBLIC -Wall -no-pie -fopenmp --offload-arch=gfx942:xnack+ "${COMPILE_OPTS}")
 target_link_libraries(SBPLIB PUBLIC hungarian absl::flat_hash_map -fopenmp stdc++fs "${COMPILE_OPTS}")
 target_link_libraries(DistributedSBP PUBLIC SBPLIB absl::flat_hash_map "${COMPILE_OPTS}")
 target_link_libraries(DivideAndConquerSBP PUBLIC SBPLIB absl::flat_hash_map "${COMPILE_OPTS}")

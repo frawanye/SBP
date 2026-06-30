@@ -2,6 +2,7 @@
 
 #include "args.hpp"
 #include "mpi_data.hpp"
+#include "rng.hpp"
 
 #include <cassert>
 #include "utils.hpp"
@@ -226,6 +227,148 @@ utils::ProposalAndEdgeCounts propose_new_block(long current_block, EdgeWeights &
     utils::div(edges, total_edges, multinomial_distribution);
     long proposal = choose_neighbor(multinomial_distribution);
     return utils::ProposalAndEdgeCounts{proposal, k_out, k_in, k};
+}
+
+namespace gpu {
+
+#pragma omp declare target
+
+long random_integer(long max, pcg32 &rng) {
+    return (long)(((uint64_t)rng() * (uint64_t)max) >> 32);
+}
+
+long choose_neighbor(long vertex, long vertex_degree, const NeighborView &out_neighbors, const NeighborView &in_neighbors, pcg32 &rng) {
+    // long r = random_integer(0, vertex_degree);
+    long r = random_integer(vertex_degree, rng);
+    long cumulative_weight = 0;
+    long chosen = -1;
+    for (size_t i = 0; i < out_neighbors.size(); ++i) {
+        cumulative_weight += out_neighbors.val(i);
+        bool first = (chosen < 0) & (cumulative_weight > r);
+        chosen = first ? out_neighbors[i] : chosen;  // if chosen = -1, and cumulative_weight > r, then choose this neighbor
+    }
+    for (size_t i = 0; i < in_neighbors.size(); ++i) {
+        cumulative_weight += in_neighbors.val(i) * (long)(in_neighbors[i] != vertex); // do not count self-edges
+        bool first = (chosen < 0) & (cumulative_weight > r);
+        chosen = first ? in_neighbors[i] : chosen;  // if chosen = -1, and cumulative_weight > r, then choose this neighbor
+    }
+    return chosen; // something went VERY wrong here
+}
+
+long choose_neighbor(long num_blocks, const long* block_weights, long total_weight, pcg32 &rng) {
+    long r = random_integer(total_weight, rng);
+    long cumulative_weight = 0;
+    long chosen = -1;
+    for (size_t block = 0; block < num_blocks; ++block) {
+        cumulative_weight += block_weights[block];
+        bool first = (chosen < 0) & (cumulative_weight > r);
+        chosen = first ? block : chosen;  // if chosen = -1, and cumulative_weight > r, then choose this neighbor
+    }
+    return chosen; // something went VERY wrong here
+}
+
+long choose_neighbor(long neighbor_block,const BlockmodelGPUView &blockmodel, long total_weight, pcg32 &rng) {
+    long r = random_integer(total_weight, rng);
+    long cumulative_weight = 0;
+    long chosen = -1;
+    for (size_t block = 0; block < blockmodel.num_blocks(); ++block) {
+        long block_weight = get_weight(neighbor_block, block, blockmodel);
+        cumulative_weight += block_weight;
+        bool first = (chosen < 0) & (cumulative_weight > r);
+        chosen = first ? block : chosen;  // if chosen = -1, and cumulative_weight > r, then choose this neighbor
+    }
+    return chosen; // something went VERY wrong here
+    
+}
+
+// TODO: get rid of block_assignment, just use blockmodel?
+ProposedMove propose_new_block(long vertex, long current_block, const CSR &graph_csr,
+                               const CSR &graph_csc, const BlockmodelGPUView &blockmodel, pcg32 &rng) {
+    long k_out = 0, k_in = 0;
+    NeighborView out_neighbors = graph_csr.neighbors(vertex);
+    NeighborView in_neighbors = graph_csc.neighbors(vertex);
+    for (size_t i = 0; i < out_neighbors.size(); ++i) {
+        k_out += out_neighbors.val(i);
+    }
+    for (size_t i = 0; i < in_neighbors.size(); ++i) {
+        k_in += in_neighbors.val(i) * (long)(in_neighbors[i] != vertex); // do not count self-edges
+    }
+    // std::vector<long> neighbor_indices = utils::concatenate<long>(out_blocks.indices, in_blocks.indices);
+    // std::vector<long> neighbor_weights = utils::concatenate<long>(out_blocks.values, in_blocks.values);
+    long k = k_out + k_in;
+    long num_blocks = blockmodel.num_blocks();
+
+    // If the current vertex has no neighbors, propose merge with random block
+    if (k == 0) {
+       long proposal = propose_random_block(current_block, num_blocks, rng);
+       return ProposedMove{vertex, current_block, proposal, k_out, k_in, k};
+    //    return utils::ProposalAndEdgeCounts{proposal, k_out, k_in, k};
+    }
+    long neighbor = choose_neighbor(vertex, k, out_neighbors, in_neighbors, rng);
+    long neighbor_block = blockmodel.block_assignment(neighbor);
+
+    long dense_total = 0;
+    for (size_t i = 0; i < num_blocks; ++i) {
+        dense_total += get_weight(neighbor_block, i, blockmodel);
+    }
+    if (dense_total == 0) { // Neighbor block has no usable neighbors, so propose a random block
+        long proposal = propose_random_block(current_block, num_blocks, rng);
+        return ProposedMove{vertex, current_block, proposal, k_out, k_in, k};
+        // return utils::ProposalAndEdgeCounts{proposal, k_out, k_in, k};
+    }
+    long proposal = choose_neighbor(neighbor_block, blockmodel, dense_total, rng);
+    return ProposedMove{vertex, current_block, proposal, k_out, k_in, k};
+    // return utils::ProposalAndEdgeCounts{proposal, k_out, k_in, k};
+}
+
+// TODO: get rid of block_assignment, just use blockmodel?
+// utils::ProposalAndEdgeCounts propose_new_block_block_merge(long current_block, const CSR &graph_csr, const CSR &graph_csc,
+//                                                            const BlockmodelGPUView &blockmodel) {
+//     std::vector<long> neighbor_indices = utils::concatenate<long>(out_blocks.indices, in_blocks.indices);
+//     std::vector<long> neighbor_weights = utils::concatenate<long>(out_blocks.values, in_blocks.values);
+//     long k_out = std::accumulate(out_blocks.values.begin(), out_blocks.values.end(), 0);
+//     long k_in = std::accumulate(in_blocks.values.begin(), in_blocks.values.end(), 0);
+//     long k = k_out + k_in;
+//     long num_blocks = blockmodel.num_blocks();
+
+//     // If the current block has no neighbors, propose merge with random block
+//     if (k == 0) {
+//         long proposal = propose_random_block(current_block, num_blocks);
+//         return utils::ProposalAndEdgeCounts{proposal, k_out, k_in, k};
+//     }
+//     long neighbor_block = choose_neighbor(neighbor_indices, neighbor_weights);
+
+//     // Dense compute path: build the neighbor-weight multinomial directly from
+//     // dense getrow/getcol vectors (indexed by block id) instead of materializing
+//     // a MapVector via neighbors_weights.
+//     const std::shared_ptr<ISparseMatrix> matrix = blockmodel.blockmatrix();
+//     std::vector<long> row = matrix->getrow(neighbor_block);
+//     std::vector<long> col = matrix->getcol(neighbor_block);
+//     std::vector<long> dense_edges(num_blocks, 0);
+//     // Mirror DenseMatrix::neighbors_weights: outgoing edges from the row
+//     // (self-edge included), incoming edges from the column excluding the
+//     // diagonal to avoid double counting.
+//     for (long i = 0; i < num_blocks; ++i) {
+//       dense_edges[i] = row[i] + (i != neighbor_block ? col[i] : 0);
+//     }
+//     dense_edges[current_block] = 0;
+//     long dense_total = utils::sum<long>(dense_edges);
+//     if (dense_total == 0) { // Neighbor block has no usable neighbors, so propose a random block
+//         long proposal = propose_random_block(current_block, num_blocks);
+//         return utils::ProposalAndEdgeCounts{proposal, k_out, k_in, k};
+//     }
+//     long proposal = choose_neighbor(dense_edges);
+//     return utils::ProposalAndEdgeCounts{proposal, k_out, k_in, k};
+// }
+
+long propose_random_block(long current_block, long num_blocks, pcg32 &rng) {
+    long proposed = random_integer(num_blocks - 1, rng);
+    proposed += 1 * (proposed >= current_block);
+    return proposed;
+}
+
+#pragma omp end declare target
+
 }
 
 long propose_random_block(long current_block, long num_blocks) {

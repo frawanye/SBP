@@ -11,10 +11,12 @@
 
 #include "common.hpp"
 #include "graph.hpp"
+#include "matrix/csr.hpp"
 #include "blockmodel/blockmodel.hpp"
 #include "blockmodel/blockmodel_triplet.hpp"
 #include "blockmodel/delta.hpp"
-#include "globals.hpp"
+#include "blockmodel/delta_coo.hpp"
+#include "pcg_random.hpp"
 #include "utils.hpp"
 #include "typedefs.hpp"
 
@@ -79,6 +81,10 @@ VertexMove eval_vertex_move(long vertex, long current_block, utils::ProposalAndE
 
 /// Evaluates a potential move of `vertex` from `current_block` to `proposal.proposal` using MCMC logic.
 VertexMove_v2 eval_vertex_move_v2(long vertex, long current_block, utils::ProposalAndEdgeCounts proposal,
+                                  const Blockmodel &blockmodel, const Graph &graph, EdgeWeights &out_edges,
+                                  EdgeWeights &in_edges);
+
+VertexMove_v3 eval_vertex_move_v3(long vertex, long current_block, utils::ProposalAndEdgeCounts proposal,
                                   const Blockmodel &blockmodel, const Graph &graph, EdgeWeights &out_edges,
                                   EdgeWeights &in_edges);
 
@@ -169,6 +175,41 @@ std::vector<std::pair<long,long>> sort_vertices_by_degree(const Graph &graph);
 //double overall_entropy(const Blockmodel &blockmodel, long num_vertices, long num_edges);
 //
 //}  // namespace undirected
+
+namespace gpu {
+
+/// GPU-accelerated asynchronous Gibbs MCMC. Select with --algorithm async_gibbs_gpu.
+Blockmodel &asynchronous_gibbs(Blockmodel &blockmodel, const Graph &graph, bool golden_ratio_not_reached);
+    
+#pragma omp declare target
+
+inline bool accept(double delta_entropy, double hastings_correction) {
+    // if (!args.hastings_correction) {
+    return delta_entropy < 0.0;
+    // }
+    // std::uniform_real_distribution<double> distribution(0.0, 1.0);
+    // double random_probability = distribution(rng::generator());
+    // // NOTE: 3.0 can be a user parameter (beta) -- higher value favors exploitation
+    // double accept_probability = exp(-3.0 * delta_entropy) * hastings_correction;
+    // accept_probability = (accept_probability >= 1.0) ? 1.0 : accept_probability;
+    // return random_probability <= accept_probability;
+}
+
+/// Returns the potential changes to the blockmodel if the vertex moves from
+/// `current_block` into `proposed_block`.
+DeltaCOO blockmodel_delta(long vertex, long current_block, long proposed_block, const CSR &graph_csr, 
+                          const CSR &graph_csc, const BlockmodelGPUView &blockmodel);
+
+VertexMoveGPU eval_vertex_move(long vertex, long current_block, const ProposedMove &proposal,
+                               const BlockmodelGPUView &blockmodel, const CSR &graph_csr, const CSR &graph_csc);
+
+/// Proposes a new Asynchronous Gibbs vertex move. Contains additional information needed for nonparametric entropy
+/// computations. Runs on the GPU.
+VertexMoveGPU propose_gibbs_move(const BlockmodelGPUView &blockmodel, long vertex, const CSR &graph_csr, const CSR &graph_csc, pcg32 &rng);
+
+#pragma omp end declare target
+
+} // namespace gpu
 
 } // namespace finetune
 

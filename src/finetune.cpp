@@ -760,6 +760,8 @@ Blockmodel &mcmc(int iteration, const Graph &graph, Blockmodel &blockmodel, Bloc
 //    std::cout << "Starting MCMC vertex moves" << std::endl;
     if (args.algorithm == "async_gibbs" && iteration < args.asynciterations)
         blockmodel = finetune::asynchronous_gibbs(blockmodel, graph, blockmodel_triplet.golden_ratio_not_reached());
+    else if (args.algorithm == "async_gibbs_gpu" && iteration < args.asynciterations)
+        blockmodel = finetune::gpu::asynchronous_gibbs(blockmodel, graph, blockmodel_triplet.golden_ratio_not_reached());
     else if (args.algorithm == "async_gibbs_load_balanced" && iteration < args.asynciterations)
         blockmodel = finetune::asynchronous_gibbs_load_balanced(blockmodel, graph, blockmodel_triplet.golden_ratio_not_reached());
     else if (args.algorithm == "hybrid_mcmc")

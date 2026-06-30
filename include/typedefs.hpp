@@ -194,6 +194,18 @@ struct NeighborView {
     long len;
 };
 
+struct ProposedMove {
+    long vertex;
+    long current_block;
+    long proposed_block;
+    long num_out_neighbor_edges;
+    long num_in_neighbor_edges;
+    long num_neighbor_edges;
+    // NeighborViews are intentionally NOT stored here: carrying their host
+    // pointers by value through the GPU kernel forced a scratch spill that
+    // faulted. Consumers re-fetch graph_csr/graph_csc.neighbors(vertex) instead.
+};
+
 const Vertex InvalidVertex { -1, 0, 0 };
 #pragma omp end declare target
 

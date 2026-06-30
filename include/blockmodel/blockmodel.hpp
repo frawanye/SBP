@@ -204,6 +204,10 @@ class Blockmodel {
     /// and updates the block degrees, which are calculated on-the-fly. NOTE: assumes self-edges are only included in
     /// move.out_edges.
     bool move_vertex(const VertexMove_v3 &move);
+    /// Moves a vertex from one block to another. Updates the blockmodel based on the edges in `move`,
+    /// and updates the block degrees, which are calculated on-the-fly. NOTE: assumes self-edges are only included in
+    /// move.out_edges.
+    bool move_vertex_gpu(const VertexMoveGPU &move, EdgeWeights &out_edges, EdgeWeights &in_edges);
     /// TODO
     void set_block_membership(long vertex, long block);
     /// TODO: Get rid of getters and setters?

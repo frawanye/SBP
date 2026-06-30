@@ -110,6 +110,36 @@ long propose_random_block(long current_block, long num_blocks);
 /// Returns a random integer between low and high
 long random_integer(long low, long high);
 
+namespace gpu {
+
+/// Uses Lemire's method to generate a random integer between 0 and max using a pcg32 RNG.
+/// For further reading, see: https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
+long random_integer(long max, pcg32 &rng);
+
+long choose_neighbor(long vertex, long vertex_degree, const NeighborView &out_neighbors, const NeighborView &in_neighbors, pcg32 &rng);
+
+long choose_neighbor(long num_blocks, const long* block_weights, long total_weight, pcg32 &rng);
+
+long choose_neighbor(long neighbor, const BlockmodelGPUView &blockmodel, long total_weight, pcg32 &rng);
+
+inline long get_weight(long neighbor, long block, const BlockmodelGPUView &blockmodel) {
+    long edges_n_b = blockmodel.get(neighbor, block);
+    long edges_b_n = blockmodel.get(block, neighbor);
+    return edges_n_b + (neighbor != block ? edges_b_n : 0);
+}
+
+/// Proposes a new block for either the block merge or finetune step based on `bool block_merge`.
+ProposedMove propose_new_block(long vertex, long current_block, const CSR &graph_csr,
+                               const CSR &graph_csc, const BlockmodelGPUView &blockmodel, pcg32 &rng);
+
+/// Proposes a new block for either the block merge or finetune step based on `bool block_merge`.
+utils::ProposalAndEdgeCounts propose_new_block_block_merge(long current_block, const CSR &graph_csr, const CSR &graph_csc,
+                                                           const BlockmodelGPUView &blockmodel);
+
+long propose_random_block(long current_block, long num_blocks, pcg32 &rng);
+
+} // namespace gpu
+
 namespace directed {
 
 /// Computes the entropy of one row or column of data for a directed graph.

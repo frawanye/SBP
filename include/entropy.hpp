@@ -6,6 +6,7 @@
 #include "distributed/two_hop_blockmodel.hpp"
 #include "common.hpp"
 #include "delta.hpp"
+#include "delta_coo.hpp"
 #include "fastlgamma.hpp"
 #include "utils.hpp"
 
@@ -173,8 +174,8 @@ double mdl(const Blockmodel &blockmodel, const Graph &graph);
 double entries_dS(const Blockmodel &blockmodel, const Delta &delta);
 
 /// Compute the entropy difference of a virtual move of vertex from one block to another
-double virtual_move_sparse(const Blockmodel &blockmodel, const Delta &delta,
-                           const utils::ProposalAndEdgeCounts &proposal);
+// double virtual_move_sparse(const Blockmodel &blockmodel, const Delta &delta,
+//                            const utils::ProposalAndEdgeCounts &proposal);
 
 double get_delta_partition_dl(long num_vertices, const Blockmodel &blockmodel, const Delta &delta, long weight);
 
@@ -191,6 +192,98 @@ double delta_mdl(const Blockmodel &blockmodel, const Graph &graph, long vertex, 
 double block_merge_delta_mdl(const Blockmodel &blockmodel, const utils::ProposalAndEdgeCounts &proposal,
                              const Graph &graph, const Delta &delta);
 
+}  // namespace nonparametric
+
+namespace gpu {
+
+#pragma omp declare target
+    
+/// Computes the hastings correction using the blockmodel deltas under the proposed vertex move.
+double hastings_correction(long vertex, const CSR &graph_csr, const CSR &graph_csc, const BlockmodelGPUView &blockmodel,
+                            const DeltaCOO &delta, long current_block, const utils::ProposalAndEdgeCounts &proposal);
+
+namespace nonparametric {
+
+double delta_mdl(const BlockmodelGPUView &blockmodel, const CSR &graph_csr, const CSR &graph_csc, long vertex,
+                 const DeltaCOO &delta, const utils::ProposalAndEdgeCounts &proposal);
+
+double delta_mdl(const BlockmodelGPUView &blockmodel, const CSR &graph_csr, const CSR &graph_csc, const ProposedMove &proposal);
+
+#ifdef __AMDGCN__
+// On the AMD GPU device, call OCML's log-gamma directly. The libm name `lgamma`
+// is not resolvable at device link on this toolchain, so route to the OCML name.
+extern "C" double __ocml_lgamma_f64(double);
+#endif
+
+inline double gpu_lgamma(double x) {
+#ifdef __AMDGCN__
+    return __ocml_lgamma_f64(x);
+#else
+    return std::lgamma(x);
+#endif
 }
 
+inline double fastlbinom(long N, long k) {
+    if (N == 0 || k == 0 || k > N)
+        return 0;
+    return ((gpu_lgamma(N + 1) - gpu_lgamma(k + 1)) - gpu_lgamma(N - k + 1));
 }
+
+double get_delta_deg_dl(long vertex, const BlockmodelGPUView &blockmodel, const DeltaCOO &delta, const CSR &graph_csr, const CSR &graph_csc);
+
+double get_delta_edges_dl(const BlockmodelGPUView &blockmodel, const DeltaCOO &delta, long weight, long num_edges);
+
+double get_delta_edges_dl(const BlockmodelGPUView &blockmodel, const ProposedMove &proposal, long weight, long num_edges);
+
+double get_delta_partition_dl(long num_vertices, const BlockmodelGPUView &blockmodel, const DeltaCOO &delta, long weight);
+
+double get_delta_partition_dl(long num_vertices, const BlockmodelGPUView &blockmodel, const ProposedMove &proposal, long weight);
+
+double get_edges_dl(size_t B, size_t E);
+
+/// Obtain the entropy difference given a set of entries in the blockmodel matrix
+double entries_dS(const BlockmodelGPUView &blockmodel, const DeltaCOO &delta);
+
+/// Obtain the entropy difference given a set of entries in the blockmodel matrix
+double entries_dS(const BlockmodelGPUView &blockmodel, const CSR &graph_csr, const CSR &graph_csc,
+                  const ProposedMove &proposal);
+
+inline double eterm_exact(long source, long destination, long weight) {
+    double val = gpu_lgamma(weight + 1);
+    return -val;
+}
+
+/// Compute the entropy difference of a virtual move of vertex from one block to another
+double virtual_move_sparse(const BlockmodelGPUView &blockmodel, const DeltaCOO &delta, long weight,
+                           const utils::ProposalAndEdgeCounts &proposal);
+
+double virtual_move_sparse(const BlockmodelGPUView &blockmodel, const CSR &graph_csr, const CSR &graph_csc,
+                           const ProposedMove &proposal, long weight);
+
+#ifdef __AMDGCN__
+// On the AMD GPU device, call OCML's natural-log directly. Using the libm name
+// `log` would let LLVM rewrite it into the llvm.log.f64 intrinsic, which the
+// AMDGPU backend cannot lower (no libcall for "flog"). The OCML name is not
+// recognized as a libm function, so it stays a plain call resolved at device link.
+extern "C" double __ocml_log_f64(double);
+#endif
+
+/// TODO: make fastlong device-safe. I think we can just replace the vector with an array, since it's bounded by args.cachesize
+inline double vterm_exact(long out_degree, long in_degree, long weight) { // out_degree, in_degree, wr=size of community, true? meh?
+    assert(out_degree >= 0 && in_degree >=0);
+    if (weight <= 0) return 0.0;  // log(0) = -inf; guard avoids -inf * 0 = NaN
+#ifdef __AMDGCN__
+    double lw = __ocml_log_f64((double) weight);
+#else
+    double lw = std::log((double) weight);
+#endif
+    return (out_degree + in_degree) * lw;
+}
+
+}  // namespace nonparametric
+
+#pragma omp end declare target
+
+}  // namespace gpu
+
+}  // namespace entropy
