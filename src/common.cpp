@@ -308,6 +308,7 @@ ProposedMove propose_new_block(long vertex, long current_block, const CSR &graph
     long neighbor_block = blockmodel.block_assignment(neighbor);
 
     long dense_total = 0;
+    #pragma omp parallel for reduction(+:dense_total)
     for (size_t i = 0; i < num_blocks; ++i) {
         dense_total += get_weight(neighbor_block, i, blockmodel);
     }

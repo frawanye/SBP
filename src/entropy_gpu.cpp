@@ -256,7 +256,8 @@ double entries_dS(const BlockmodelGPUView &blockmodel, const CSR &graph_csr, con
 
     // walk through affected blockmodel rows and columns, compute the change in entropy for each cell
     #pragma omp parallel for reduction(+:dS)
-    for (long col = 0; col < blockmodel.num_blocks(); ++col) {
+    for (long index = 0; index < blockmodel.num_blocks(); ++index) {
+        long col = index;
         for (long row : {proposal.current_block, proposal.proposed_block}) {
             long change = cell_change(proposal, self_edges, blockmodel, row, col, out_neighbors, in_neighbors);
             auto value = (long) blockmodel.get(row, col);
@@ -264,10 +265,7 @@ double entries_dS(const BlockmodelGPUView &blockmodel, const CSR &graph_csr, con
             assert(!std::isinf(dS));
             assert(!std::isnan(dS));
         }
-    }
-
-    #pragma omp parallel for reduction(+:dS)
-    for (long row = 0; row < blockmodel.num_blocks(); ++row) {
+        long row = index;
         if (row == proposal.current_block || row == proposal.proposed_block) continue;
         for (long col : {proposal.current_block, proposal.proposed_block}) {
             long change = cell_change(proposal, self_edges, blockmodel, row, col, out_neighbors, in_neighbors);
