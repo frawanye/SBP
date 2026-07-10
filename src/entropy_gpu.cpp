@@ -93,42 +93,7 @@ namespace gpu {
 namespace nonparametric {
 
 #pragma omp declare target
-double delta_mdl(const BlockmodelGPUView &blockmodel, const CSR &graph_csr, const CSR &graph_csc, long vertex,
-                 const DeltaCOO &delta, const utils::ProposalAndEdgeCounts &proposal) {
-//    std::cout << blockmodel.block_assignment(vertex) << " != " << delta.current_block() << std::endl;
-    assert(blockmodel.block_assignment(vertex) == delta.current_block());
 
-//    get_move_entries(v, r, nr, m_entries, [](auto) constexpr { return false; });
-
-    if (delta.current_block() == delta.proposed_block()) return 0;
-//    if (r == nr || _vweight[v] == 0)
-//        return 0;
-
-    double dS = 0;
-    dS = virtual_move_sparse(blockmodel, delta, 1, proposal);  // <true>(v, r, nr, m_entries);
-
-    double dS_dl = 0;
-
-    dS_dl += get_delta_partition_dl(graph_csr.num_rows(), blockmodel, delta, 1);  // v, r, nr, ea);
-    assert(!std::isinf(dS_dl));
-    assert(!std::isnan(dS_dl));
-
-//    if (ea.degree_dl || ea.edges_dl) {
-//    auto& ps = get_partition_stats(v);
-//    if (_deg_corr && ea.degree_dl)
-    dS_dl += 0.0; // currently only handling nonparametric case, where degree corrected = false.
-    // ds_dl += get_delta_deg_dl(vertex, blockmodel, delta, graph_csr, graph_csc);  // v, r, nr, _vweight, _eweight, _degs, _g, ea.degree_dl_kind);
-//    if (ea.edges_dl)
-//    {
-//    size_t actual_B = 0;
-//    for (auto& ps : _partition_stats)
-//        actual_B += ps.get_actual_B();
-    dS_dl += get_delta_edges_dl(blockmodel, delta, 1, graph_csr.nnz());  // v, r, nr, _vweight, actual_B, _g);
-
-    return dS + BETA_DL * dS_dl;
-}
-
-#pragma omp declare target
 double delta_mdl(const BlockmodelGPUView &blockmodel, const CSR &graph_csr, const CSR &graph_csc,
                  const ProposedMove &proposal) {
 //    std::cout << blockmodel.block_assignment(vertex) << " != " << delta.current_block() << std::endl;
@@ -183,28 +148,6 @@ double delta_mdl(const BlockmodelGPUView &blockmodel, const CSR &graph_csr, cons
 // }
 
 //template <class VProp, class Graph>
-double get_delta_edges_dl(const BlockmodelGPUView &blockmodel, const DeltaCOO &delta, long weight, long num_edges) {
-    if (delta.current_block() == delta.proposed_block())
-        return 0;
-
-    double S_b = 0, S_a = 0;
-
-    int dB = 0;
-    dB -= 1 * (blockmodel.block_size(delta.current_block()) == weight);
-    dB += 1 * (blockmodel.block_size(delta.proposed_block()) == 0);
-
-    if (dB != 0) {
-        S_b += get_edges_dl(blockmodel.num_nonempty_blocks(), num_edges);
-        S_a += get_edges_dl(blockmodel.num_nonempty_blocks() + dB, num_edges);
-    }
-
-    double dS = S_a - S_b;
-    assert(!std::isinf(dS));
-    assert(!std::isnan(dS));
-    return dS;
-}
-
-//template <class VProp, class Graph>
 double get_delta_edges_dl(const BlockmodelGPUView &blockmodel, const ProposedMove &proposal, long weight, long num_edges) {
     if (proposal.current_block == proposal.proposed_block)
         return 0;
@@ -223,36 +166,6 @@ double get_delta_edges_dl(const BlockmodelGPUView &blockmodel, const ProposedMov
     double dS = S_a - S_b;
     assert(!std::isinf(dS));
     assert(!std::isnan(dS));
-    return dS;
-}
-
-double get_delta_partition_dl(long num_vertices, const BlockmodelGPUView &blockmodel, const DeltaCOO &delta, long weight) {  // size_t v, size_t r, size_t nr, const entropy_args_t& ea) {
-    if (delta.current_block() == delta.proposed_block()) return 0.;
-
-    double dS = 0;
-    double S_b = 0;
-    double S_a = 0;
-
-    // Use gpu_lgamma (OCML on device) instead of the cached host fastlgamma so this stays device-safe on the GPU offload path.
-    S_b += -gpu_lgamma(blockmodel.block_size(delta.current_block()) + 1);  // _total[r] + 1);
-    S_a += -gpu_lgamma(blockmodel.block_size(delta.current_block()) - weight + 1);  // _total[r] - n + 1);
-
-    S_b += -gpu_lgamma(blockmodel.block_size(delta.proposed_block()) + 1);  // _total[nr] + 1);
-    S_a += -gpu_lgamma(blockmodel.block_size(delta.proposed_block()) + weight + 1);  // _total[nr] + n + 1);
-
-    int dB = 0;
-    dB -= 1 * (blockmodel.block_size(delta.current_block()) == weight);
-    dB += 1 * (blockmodel.block_size(delta.proposed_block()) == 0);
-
-    if (dB != 0) {
-        S_b += fastlbinom(num_vertices - 1, blockmodel.num_nonempty_blocks() - 1);
-        S_a += fastlbinom(num_vertices - 1, blockmodel.num_nonempty_blocks() + dB - 1);
-    }
-
-    dS += S_a - S_b;
-    assert(!std::isinf(dS));
-    assert(!std::isnan(dS));
-
     return dS;
 }
 
@@ -292,27 +205,6 @@ double get_edges_dl(size_t B, size_t E) {
     double E_dl = fastlbinom(NB + E - 1, E);
 //    std::cout << "edges_dl: " << E_dl << std::endl;
     return E_dl;
-}
-
-// obtain the entropy difference given a set of entries in the e_rs matrix
-//template <bool exact, class MEntries, class Eprop, class EMat, class BGraph>
-//[[gnu::always_inline]] [[gnu::flatten]] [[gnu::hot]] inline
-double entries_dS(const BlockmodelGPUView &blockmodel, const DeltaCOO &delta) {  // MEntries& m_entries, Eprop& mrs, EMat& emat, BGraph& bg) {
-    double dS = 0;
-    using gpu::nonparametric::eterm_exact;
-    
-    for (long i = 0; i < delta.nnz(); ++i) {
-        long row = delta.row(i);
-        long col = delta.col(i);
-        double change = delta.val(i);
-
-        // delta += + E(old) - E(new)
-        auto value = (long) blockmodel.get(row, col);
-        dS += eterm_exact(row, col, value + change) - eterm_exact(row, col, value);
-        assert(!std::isinf(dS));
-        assert(!std::isnan(dS));
-    }
-    return dS;
 }
 
 /// Sum of non-self edges incident to `block`
@@ -363,6 +255,7 @@ double entries_dS(const BlockmodelGPUView &blockmodel, const CSR &graph_csr, con
     long self_edges = self_edge_weight(out_neighbors, proposal.vertex);
 
     // walk through affected blockmodel rows and columns, compute the change in entropy for each cell
+    #pragma omp parallel for reduction(+:dS)
     for (long col = 0; col < blockmodel.num_blocks(); ++col) {
         for (long row : {proposal.current_block, proposal.proposed_block}) {
             long change = cell_change(proposal, self_edges, blockmodel, row, col, out_neighbors, in_neighbors);
@@ -373,6 +266,7 @@ double entries_dS(const BlockmodelGPUView &blockmodel, const CSR &graph_csr, con
         }
     }
 
+    #pragma omp parallel for reduction(+:dS)
     for (long row = 0; row < blockmodel.num_blocks(); ++row) {
         if (row == proposal.current_block || row == proposal.proposed_block) continue;
         for (long col : {proposal.current_block, proposal.proposed_block}) {
@@ -384,37 +278,6 @@ double entries_dS(const BlockmodelGPUView &blockmodel, const CSR &graph_csr, con
         }
     }
     
-    return dS;
-}
-
-// compute the entropy difference of a virtual move of vertex from block r
-// to nr
-//template <bool exact, class MEntries>
-double virtual_move_sparse(const BlockmodelGPUView &blockmodel, const DeltaCOO &delta, long weight,
-                           const utils::ProposalAndEdgeCounts &proposal) {  // size_t v, size_t r, size_t nr, MEntries& m_entries) {
-    // TODO: see if I can safely get rid of this branch
-    if (delta.current_block() == delta.proposed_block()) return 0.;
-
-    double dS = entries_dS(blockmodel, delta);  // <exact>(m_entries, _mrs, _emat, _bg);
-
-    long kin = proposal.num_in_neighbor_edges;
-    long kout = proposal.num_out_neighbor_edges;
-
-    using gpu::nonparametric::vterm_exact;
-    // auto vt = [&](auto out_degree, auto in_degree, auto w) { // , auto nr) {
-    //     return gpu::nonparametric::vterm_exact(out_degree, in_degree, w);  // , nr, _deg_corr, _bg);
-    // };
-
-    dS += vterm_exact(blockmodel.degrees_out(delta.current_block()) - kout, blockmodel.degrees_in(delta.current_block()) - kin, blockmodel.block_size(delta.current_block()) - weight);  // , wr_r - dwr);
-    dS -= vterm_exact(blockmodel.degrees_out(delta.current_block()), blockmodel.degrees_in(delta.current_block()), blockmodel.block_size(delta.current_block()));  //        , mrm_r      , wr_r      );
-    assert(!std::isinf(dS));
-    assert(!std::isnan(dS));
-
-    dS += vterm_exact(blockmodel.degrees_out(delta.proposed_block()) + kout, blockmodel.degrees_in(delta.proposed_block()) + kin, blockmodel.block_size(delta.proposed_block()) + weight);  // , wr_nr + dwnr);
-    dS -= vterm_exact(blockmodel.degrees_out(delta.proposed_block()), blockmodel.degrees_in(delta.proposed_block()), blockmodel.block_size(delta.proposed_block()));  //        , mrm_nr      , wr_nr       );
-    assert(!std::isinf(dS));
-    assert(!std::isnan(dS));
-
     return dS;
 }
 

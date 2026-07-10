@@ -44,7 +44,7 @@ Blockmodel &asynchronous_gibbs(Blockmodel &blockmodel, const Graph &graph, bool 
             double start_t = MPI_Wtime();
             const CSR &graph_csr = graph.out_csr();
             const CSR &graph_csc = graph.in_csr();
-            #pragma omp target teams distribute parallel for 
+            #pragma omp target teams distribute thread_limit(args.gpu_thread_limit)
             for (long index = start; index < end; ++index) {
                 long vertex = shuffled_vertices_gpu[index];
                 pcg32 rng(seed + (uint64_t)iteration, (uint64_t)vertex);

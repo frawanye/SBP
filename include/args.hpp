@@ -51,6 +51,7 @@ public:  // Everything in here is public, because why not?
     std::string subgraphpartition;
     std::string tag;
     int threads;
+    int gpu_thread_limit;
     bool coodelta;
     bool csrgraph;
     std::string matrix_type;
@@ -158,6 +159,9 @@ public:  // Everything in here is public, because why not?
                                               "string or param1=value1;param2=value2", parser);
             TCLAP::ValueArg<int> _threads("", "threads", "The number of OpenMP threads to use. If less than 1, will set "
                                           "number of threads to number of logical CPU cores", false, 1, "int", parser);
+            TCLAP::ValueArg<int> _gpu_thread_limit("", "gpu_thread_limit", "Threads per team (workgroup size) for the GPU "
+                                          "async Gibbs kernel; the team cooperates on the per-vertex block loop. Should be a "
+                                          "multiple of 64 and <= 1024.", false, 256, "int", parser);
             TCLAP::ValueArg<std::string> _matrix_type("", "matrix_type", "Matrix storage type for blockmodel",
                                                       false, "sparse_transpose", "dense|sparse|sparse_transpose", parser);
             TCLAP::ValueArg<std::string> _type("t", "type", "The type of streaming/name of the graph", false, "static",
@@ -212,6 +216,7 @@ public:  // Everything in here is public, because why not?
             this->subgraphpartition = _subgraphpartition.getValue();
             this->tag = _tag.getValue();
             this->threads = _threads.getValue();
+            this->gpu_thread_limit = _gpu_thread_limit.getValue();
             this->coodelta = _coodelta.getValue();
             this->csrgraph = _csrgraph.getValue();
             this->matrix_type = _matrix_type.getValue();
