@@ -241,6 +241,7 @@ struct VertexMove_v3 {
     EdgeWeights in_edges;
 };
 
+/// Used for GPU-based vertex moves. TODO: reduce memory usage by storing the minimum required information.
 struct VertexMoveGPU {
     double delta_entropy;
     bool did_move;

@@ -230,10 +230,8 @@ long self_edge_weight(const NeighborView &out_neighbors, long vertex) {
 }
 
 long cell_change(const ProposedMove &proposal, long self_edges, const BlockmodelGPUView &blockmodel, long row, long col,
-                 const NeighborView &out_neighbors, const NeighborView &in_neighbors) {
+                 long out_edges, long in_edges) {
     long change = 0;
-    long out_edges = incident_edges(proposal.vertex, out_neighbors, blockmodel, col);
-    long in_edges = incident_edges(proposal.vertex, in_neighbors, blockmodel, row);
     change += out_edges * (row == proposal.proposed_block);
     change += in_edges * (col == proposal.proposed_block);
     change -= out_edges * (row == proposal.current_block);
@@ -242,6 +240,20 @@ long cell_change(const ProposedMove &proposal, long self_edges, const Blockmodel
     change -= self_edges * (row == proposal.current_block && col == proposal.current_block);
     return change;
 }
+
+// long cell_change(const ProposedMove &proposal, long self_edges, const BlockmodelGPUView &blockmodel, long row, long col,
+//                  const NeighborView &out_neighbors, const NeighborView &in_neighbors) {
+//     long change = 0;
+//     long out_edges = incident_edges(proposal.vertex, out_neighbors, blockmodel, col);
+//     long in_edges = incident_edges(proposal.vertex, in_neighbors, blockmodel, row);
+//     change += out_edges * (row == proposal.proposed_block);
+//     change += in_edges * (col == proposal.proposed_block);
+//     change -= out_edges * (row == proposal.current_block);
+//     change -= in_edges * (col == proposal.current_block);
+//     change += self_edges * (row == proposal.proposed_block && col == proposal.proposed_block);
+//     change -= self_edges * (row == proposal.current_block && col == proposal.current_block);
+//     return change;
+// }
 
 // obtain the entropy difference given a set of entries in the e_rs matrix
 //template <bool exact, class MEntries, class Eprop, class EMat, class BGraph>
@@ -254,27 +266,92 @@ double entries_dS(const BlockmodelGPUView &blockmodel, const CSR &graph_csr, con
     NeighborView in_neighbors = graph_csc.neighbors(proposal.vertex);
     long self_edges = self_edge_weight(out_neighbors, proposal.vertex);
 
-    // walk through affected blockmodel rows and columns, compute the change in entropy for each cell
-    #pragma omp parallel for reduction(+:dS)
-    for (long index = 0; index < blockmodel.num_blocks(); ++index) {
-        long col = index;
-        for (long row : {proposal.current_block, proposal.proposed_block}) {
-            long change = cell_change(proposal, self_edges, blockmodel, row, col, out_neighbors, in_neighbors);
-            auto value = (long) blockmodel.get(row, col);
-            dS += eterm_exact(row, col, value + change) - eterm_exact(row, col, value);
-            assert(!std::isinf(dS));
-            assert(!std::isnan(dS));
+    long start_ptr = graph_csr.row_ptrs[proposal.vertex];
+    long end_ptr = start_ptr + graph_csr.degree(proposal.vertex);
+    long out_weight_current = 0, out_weight_proposed = 0, in_weight_current = 0, in_weight_proposed = 0;
+    while (start_ptr < end_ptr) {
+        long block = graph_csr._block_id[start_ptr];
+        long out_weight = 0;
+        while (start_ptr < end_ptr && graph_csr._block_id[start_ptr] == block) {
+            out_weight += graph_csr._edge_weight[start_ptr];
+            ++start_ptr;
         }
-        long row = index;
-        if (row == proposal.current_block || row == proposal.proposed_block) continue;
-        for (long col : {proposal.current_block, proposal.proposed_block}) {
-            long change = cell_change(proposal, self_edges, blockmodel, row, col, out_neighbors, in_neighbors);
-            auto value = (long) blockmodel.get(row, col);
-            dS += eterm_exact(row, col, value + change) - eterm_exact(row, col, value);
-            assert(!std::isinf(dS));
-            assert(!std::isnan(dS));
-        }
+        out_weight_current += (block == proposal.current_block) * (out_weight - self_edges);
+        out_weight_proposed += (block == proposal.proposed_block) * out_weight;
+        if (block == proposal.current_block || block == proposal.proposed_block) continue;
+        // dS for (current_block, block)
+        long change = cell_change(proposal, self_edges, blockmodel, proposal.current_block, block, out_weight, 0);
+        auto value = (long) blockmodel.get(proposal.current_block, block);
+        dS += eterm_exact(proposal.current_block, block, value + change) - eterm_exact(proposal.current_block, block, value);
+        // dS for (proposed_block, block)
+        change = cell_change(proposal, self_edges, blockmodel, proposal.proposed_block, block, out_weight, 0);
+        value = (long) blockmodel.get(proposal.proposed_block, block);
+        dS += eterm_exact(proposal.proposed_block, block, value + change) - eterm_exact(proposal.proposed_block, block, value);
+        assert(!std::isinf(dS));
+        assert(!std::isnan(dS));
     }
+
+    start_ptr = graph_csc.row_ptrs[proposal.vertex];
+    end_ptr = start_ptr + graph_csc.degree(proposal.vertex);
+
+    while (start_ptr < end_ptr) {
+        long block = graph_csc._block_id[start_ptr];
+        long in_weight = 0;
+        while (start_ptr < end_ptr && graph_csc._block_id[start_ptr] == block) {
+            in_weight += graph_csc._edge_weight[start_ptr];
+            ++start_ptr;
+        }
+        in_weight_current += (block == proposal.current_block) * (in_weight - self_edges);
+        in_weight_proposed += (block == proposal.proposed_block) * in_weight;
+        if (block == proposal.current_block || block == proposal.proposed_block) continue;
+        // dS for (block, current_block)
+        long change = cell_change(proposal, self_edges, blockmodel, block, proposal.current_block, 0, in_weight);
+        auto value = (long) blockmodel.get(block, proposal.current_block);
+        dS += eterm_exact(block, proposal.current_block, value + change) - eterm_exact(block, proposal.current_block, value);
+        // dS for (block, proposed_block)
+        change = cell_change(proposal, self_edges, blockmodel, block, proposal.proposed_block, 0, in_weight);
+        value = (long) blockmodel.get(block, proposal.proposed_block);
+        dS += eterm_exact(block, proposal.proposed_block, value + change) - eterm_exact(block, proposal.proposed_block, value);
+        assert(!std::isinf(dS));
+        assert(!std::isnan(dS));
+    }
+    // handle (current_block, current_block)
+    long change = cell_change(proposal, self_edges, blockmodel, proposal.current_block, proposal.current_block, out_weight_current, in_weight_current);
+    auto value = (long) blockmodel.get(proposal.current_block, proposal.current_block);
+    dS += eterm_exact(proposal.current_block, proposal.current_block, value + change) - eterm_exact(proposal.current_block, proposal.current_block, value);
+    // handle (current_block, proposed_block)
+    change = cell_change(proposal, self_edges, blockmodel, proposal.current_block, proposal.proposed_block, out_weight_proposed, in_weight_current);
+    value = (long) blockmodel.get(proposal.current_block, proposal.proposed_block);
+    dS += eterm_exact(proposal.current_block, proposal.proposed_block, value + change) - eterm_exact(proposal.current_block, proposal.proposed_block, value);
+    // handle (proposed_block, current_block)
+    change = cell_change(proposal, self_edges, blockmodel, proposal.proposed_block, proposal.current_block, out_weight_current, in_weight_proposed);
+    value = (long) blockmodel.get(proposal.proposed_block, proposal.current_block);
+    dS += eterm_exact(proposal.proposed_block, proposal.current_block, value + change) - eterm_exact(proposal.proposed_block, proposal.current_block, value);
+    // handle (proposed_block, proposed_block)
+    change = cell_change(proposal, self_edges, blockmodel, proposal.proposed_block, proposal.proposed_block, out_weight_proposed, in_weight_proposed);
+    value = (long) blockmodel.get(proposal.proposed_block, proposal.proposed_block);
+    dS += eterm_exact(proposal.proposed_block, proposal.proposed_block, value + change) - eterm_exact(proposal.proposed_block, proposal.proposed_block, value);
+    // // walk through affected blockmodel rows and columns, compute the change in entropy for each cell
+    // #pragma omp parallel for reduction(+:dS)
+    // for (long index = 0; index < blockmodel.num_blocks(); ++index) {
+    //     long col = index;
+    //     for (long row : {proposal.current_block, proposal.proposed_block}) {
+    //         long change = cell_change(proposal, self_edges, blockmodel, row, col, out_neighbors, in_neighbors);
+    //         auto value = (long) blockmodel.get(row, col);
+    //         dS += eterm_exact(row, col, value + change) - eterm_exact(row, col, value);
+    //         assert(!std::isinf(dS));
+    //         assert(!std::isnan(dS));
+    //     }
+    //     long row = index;
+    //     if (row == proposal.current_block || row == proposal.proposed_block) continue;
+    //     for (long col : {proposal.current_block, proposal.proposed_block}) {
+    //         long change = cell_change(proposal, self_edges, blockmodel, row, col, out_neighbors, in_neighbors);
+    //         auto value = (long) blockmodel.get(row, col);
+    //         dS += eterm_exact(row, col, value + change) - eterm_exact(row, col, value);
+    //         assert(!std::isinf(dS));
+    //         assert(!std::isnan(dS));
+    //     }
+    // }
     
     return dS;
 }

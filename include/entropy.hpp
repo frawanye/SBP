@@ -204,6 +204,10 @@ double hastings_correction(long vertex, const CSR &graph_csr, const CSR &graph_c
 
 namespace nonparametric {
 
+/// Computes the change in the blockmodel entry (row, col) when a vertex moves from one block to another.
+long cell_change(const ProposedMove &proposal, long self_edges, const BlockmodelGPUView &blockmodel, long row, long col,
+                 long out_edges, long in_edges);
+
 double delta_mdl(const BlockmodelGPUView &blockmodel, const CSR &graph_csr, const CSR &graph_csc, long vertex,
                  const DeltaCOO &delta, const utils::ProposalAndEdgeCounts &proposal);
 

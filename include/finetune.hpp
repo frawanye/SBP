@@ -197,8 +197,11 @@ inline bool accept(double delta_entropy, double hastings_correction) {
 
 /// Returns the potential changes to the blockmodel if the vertex moves from
 /// `current_block` into `proposed_block`.
-DeltaCOO blockmodel_delta(long vertex, long current_block, long proposed_block, const CSR &graph_csr, 
+DeltaCOO blockmodel_delta(long vertex, long current_block, long proposed_block, const CSR &graph_csr,
                           const CSR &graph_csc, const BlockmodelGPUView &blockmodel);
+
+/// Performs a heap sort on the keys and values arrays. Sorts the keys, and keeps values in the same order as the sorted keys.
+void heap_sort(long *keys, long *values, long size);
 
 VertexMoveGPU eval_vertex_move(long vertex, long current_block, const ProposedMove &proposal,
                                const BlockmodelGPUView &blockmodel, const CSR &graph_csr, const CSR &graph_csc);

@@ -26,11 +26,14 @@
  */
 #pragma omp begin declare target
 struct CSR {
-    long* row_ptrs    = nullptr;   // size nrows+1
-    long* col_indices = nullptr;   // size nedges
-    long* vals        = nullptr;   // size nedges
-    long  nrows       = 0;
-    long  nedges      = 0;
+    long*  row_ptrs    = nullptr;   // size nrows+1
+    long*  col_indices = nullptr;   // size nedges
+    long*  vals        = nullptr;   // size nedges
+    long   nrows       = 0;
+    long   nedges      = 0;
+    // Only used on the GPU to improve performance
+    long* _block_id    = nullptr;
+    long* _edge_weight = nullptr;
 
     /// Number of rows (vertices).
     long num_rows() const { return nrows; }
@@ -45,8 +48,6 @@ struct CSR {
     NeighborView neighbors(long v) const {
         return NeighborView(col_indices + row_ptrs[v], vals + row_ptrs[v], row_ptrs[v + 1] - row_ptrs[v]);
     }
-
-    
 
     /// Raw pointer to row_ptrs array.
     const long* row_ptrs_data()    const { return row_ptrs; }

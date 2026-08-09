@@ -16,6 +16,8 @@ static void free_csr(CSR &csr) {
     delete[] csr.row_ptrs;
     delete[] csr.col_indices;
     delete[] csr.vals;
+    delete[] csr._block_id;
+    delete[] csr._edge_weight;
     csr.row_ptrs = csr.col_indices = csr.vals = nullptr;
     csr.nrows = csr.nedges = 0;
 }
@@ -36,6 +38,14 @@ static CSR copy_csr(const CSR &src) {
     if (src.vals) {
         dst.vals = new long[src.nedges];
         std::copy(src.vals, src.vals + src.nedges, dst.vals);
+    }
+    if (src._block_id) {
+        dst._block_id = new long[src.nedges];
+        std::copy(src._block_id, src._block_id + src.nedges, dst._block_id);
+    }
+    if (src._edge_weight) {
+        dst._edge_weight = new long[src.nedges];
+        std::copy(src._edge_weight, src._edge_weight + src.nedges, dst._edge_weight);
     }
     return dst;
 }
@@ -117,7 +127,13 @@ void Graph::add_edge(long from, long to) {
 void Graph::build_csr() {
     if (!args.csrgraph) return;  // NL mode: keep staging as the permanent store
     build_csr_matrix(this->_out_csr, this->_out_staging, this->_num_vertices, this->_num_edges);
-    build_csr_matrix(this->_in_csr,  this->_in_staging,  this->_num_vertices, this->_num_edges);
+    build_csr_matrix(this->_in_csr, this->_in_staging, this->_num_vertices, this->_num_edges);
+    if (args.algorithm == "async_gibbs_gpu") {
+        this->_out_csr._block_id = new long[this->_num_edges];
+        this->_out_csr._edge_weight = new long[this->_num_edges];
+        this->_in_csr._block_id = new long[this->_num_edges];
+        this->_in_csr._edge_weight = new long[this->_num_edges];
+    }
     this->_out_staging.clear();
     this->_out_staging.shrink_to_fit();
     this->_in_staging.clear();

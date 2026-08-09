@@ -44,6 +44,25 @@ Blockmodel &asynchronous_gibbs(Blockmodel &blockmodel, const Graph &graph, bool 
             double start_t = MPI_Wtime();
             const CSR &graph_csr = graph.out_csr();
             const CSR &graph_csc = graph.in_csr();
+            #pragma omp target teams distribute parallel for
+            for (size_t index = 0; index < graph_csr.nedges; ++index) {
+                graph_csr._block_id[index] = blockmodel_gpu.block_assignment(graph_csr.col_indices[index]);
+                graph_csc._block_id[index] = blockmodel_gpu.block_assignment(graph_csc.col_indices[index]);
+                graph_csr._edge_weight[index] = graph_csr.vals[index];
+                graph_csc._edge_weight[index] = graph_csc.vals[index];
+            }
+            #pragma omp target teams distribute parallel for
+            for (size_t vertex = 0; vertex < graph_csr.nrows; ++vertex) {
+                // sort _block_id and _edge_weight for the CSR and CSC for this vertex
+                long *csr_keys = graph_csr._block_id + graph_csr.row_ptrs[vertex];
+                long *csr_values = graph_csr._edge_weight + graph_csr.row_ptrs[vertex];
+                long csr_size = graph_csr.degree(vertex);
+                heap_sort(csr_keys, csr_values, csr_size);
+                long *csc_keys = graph_csc._block_id + graph_csc.row_ptrs[vertex];
+                long *csc_values = graph_csc._edge_weight + graph_csc.row_ptrs[vertex];
+                long csc_size = graph_csc.degree(vertex);
+                heap_sort(csc_keys, csc_values, csc_size);
+            }
             #pragma omp target teams distribute thread_limit(args.gpu_thread_limit)
             for (long index = start; index < end; ++index) {
                 long vertex = shuffled_vertices_gpu[index];
@@ -120,6 +139,81 @@ DeltaCOO blockmodel_delta(long vertex, long current_block, long proposed_block, 
         }
     }
     return delta;
+}
+
+void heap_sort(long *keys, long *values, long size) {
+    // First, we build the heap
+    // The heap is stored in the array in level-order, root, left child, right child, left left, left right, right left,
+    // right right, etc.
+    // Left child of index is is 2*index + 1 and right child is 2*index + 2.
+    // The parent of index is (index - 1) / 2.
+    for (long start = size / 2 - 1; start >= 0; --start) { // start is the last parent node
+        long root = start;
+        long child, left_child, right_child;
+        child = left_child = 2 * root + 1;
+        right_child = left_child + 1; // 2 * root + 2
+        if (left_child >= size)
+            continue; // no children
+        if (right_child < size && keys[left_child] < keys[right_child])
+            child = right_child;
+        if (keys[root] >= keys[child])
+            continue; // if root is greater than the child, then the heap property is satisfied
+        // else, swap the root and the child
+        long temp_key = keys[root];
+        keys[root] = keys[child];
+        keys[child] = temp_key;
+        long temp_value = values[root];
+        values[root] = values[child];
+        values[child] = temp_value;
+        root = child;
+        while (true) {
+            child = 2 * root + 1;
+            right_child = child + 1;
+            if (child >= size)
+                break;
+            if (right_child < size && keys[child] < keys[right_child])
+                child = right_child;
+            if (keys[root] >= keys[child])
+                break;
+            // else, swap the root and the child
+            temp_key = keys[root];
+            keys[root] = keys[child];
+            keys[child] = temp_key;
+            temp_value = values[root];
+            values[root] = values[child];
+            values[child] = temp_value;
+            root = child;
+        }
+    }
+    // Now, we "sort" the heap by repeatedly extracting the root and then replacing it with the last element.
+    for (long end = size - 1; end > 0; --end) {
+        long temp_key = keys[0];
+        keys[0] = keys[end];
+        keys[end] = temp_key;
+        long temp_value = values[0];
+        values[0] = values[end];
+        values[end] = temp_value;
+        // Now, rebalance the heap
+        long root = 0;
+        while (true) {
+            long child = 2 * root + 1;
+            long right_child = child + 1;
+            if (child >= end)
+                break;
+            if (right_child < end && keys[child] < keys[right_child])
+                child = right_child;
+            if (keys[root] >= keys[child])
+                break;
+            // else, swap the root and the child
+            temp_key = keys[root];
+            keys[root] = keys[child];
+            keys[child] = temp_key;
+            temp_value = values[root];
+            values[root] = values[child];
+            values[child] = temp_value;
+            root = child;
+        }
+    }
 }
 
 VertexMoveGPU propose_gibbs_move(const BlockmodelGPUView &blockmodel, long vertex, const CSR &graph_csr, const CSR &graph_csc, pcg32 &rng) {
