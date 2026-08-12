@@ -119,6 +119,7 @@ add_executable(Test
         test/dict_matrix_test.cpp
         test/dict_transpose_matrix_test.cpp
         test/entropy_test.cpp
+        test/entropy_gpu_test.cpp
         test/evaluate_test.cpp
         test/finetune_test.cpp
         test/test_main.cpp

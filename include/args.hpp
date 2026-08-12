@@ -54,6 +54,7 @@ public:  // Everything in here is public, because why not?
     int gpu_thread_limit;
     bool coodelta;
     bool csrgraph;
+    bool sparse_entries_ds;
     std::string matrix_type;
     std::string type;
     bool undirected;
@@ -171,6 +172,11 @@ public:  // Everything in here is public, because why not?
                                       "via omp target map.", parser, false);
             TCLAP::SwitchArg _csrgraph("", "csrgraph", "If set, use CSR adjacency for the graph. "
                                       "Otherwise use the neighbor-list (vector-of-vectors) adjacency.", parser, false);
+            TCLAP::SwitchArg _sparse_entries_ds("", "sparse_entries_ds", "GPU only. If set, the async Gibbs entropy "
+                                      "delta visits only the blocks a vertex actually neighbors, by sorting each "
+                                      "vertex's neighbor-block list and run-length encoding it. Otherwise every one "
+                                      "of the B blocks is swept. Both paths must produce identical delta entropies.",
+                                      parser, false);
             TCLAP::SwitchArg _undirected("", "undirected", "If set, graph will be treated as undirected", parser,
                                          false);
             parser.parse(argc, argv);
@@ -219,6 +225,7 @@ public:  // Everything in here is public, because why not?
             this->gpu_thread_limit = _gpu_thread_limit.getValue();
             this->coodelta = _coodelta.getValue();
             this->csrgraph = _csrgraph.getValue();
+            this->sparse_entries_ds = _sparse_entries_ds.getValue();
             this->matrix_type = _matrix_type.getValue();
             this->type = _type.getValue();
             this->undirected = _undirected.getValue();

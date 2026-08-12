@@ -19,6 +19,7 @@ static void free_csr(CSR &csr) {
     delete[] csr._block_id;
     delete[] csr._edge_weight;
     csr.row_ptrs = csr.col_indices = csr.vals = nullptr;
+    csr._block_id = csr._edge_weight = nullptr;
     csr.nrows = csr.nedges = 0;
 }
 
@@ -128,7 +129,10 @@ void Graph::build_csr() {
     if (!args.csrgraph) return;  // NL mode: keep staging as the permanent store
     build_csr_matrix(this->_out_csr, this->_out_staging, this->_num_vertices, this->_num_edges);
     build_csr_matrix(this->_in_csr, this->_in_staging, this->_num_vertices, this->_num_edges);
-    if (args.algorithm == "async_gibbs_gpu") {
+    // The neighbor-block companions are only read by the sparse (sort + run-length encoded)
+    // entropy delta. Their presence is what selects that path on the device, so allocate them
+    // only when it is requested.
+    if (args.algorithm == "async_gibbs_gpu" && args.sparse_entries_ds) {
         this->_out_csr._block_id = new long[this->_num_edges];
         this->_out_csr._edge_weight = new long[this->_num_edges];
         this->_in_csr._block_id = new long[this->_num_edges];

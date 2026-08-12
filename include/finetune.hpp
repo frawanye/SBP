@@ -203,6 +203,13 @@ DeltaCOO blockmodel_delta(long vertex, long current_block, long proposed_block, 
 /// Performs a heap sort on the keys and values arrays. Sorts the keys, and keeps values in the same order as the sorted keys.
 void heap_sort(long *keys, long *values, long size);
 
+/// Refreshes `vertex`'s neighbor-block companions in the CSR and CSC from the current block
+/// assignment, then sorts each slice by block id with the edge weights carried along. This is the
+/// state the run-length-encoded entries_dS reads. Each vertex touches only its own slices, so this
+/// is safe to call for all vertices in parallel.
+void refresh_neighbor_blocks(long vertex, const CSR &graph_csr, const CSR &graph_csc,
+                             const BlockmodelGPUView &blockmodel);
+
 VertexMoveGPU eval_vertex_move(long vertex, long current_block, const ProposedMove &proposal,
                                const BlockmodelGPUView &blockmodel, const CSR &graph_csr, const CSR &graph_csc);
 

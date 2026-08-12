@@ -44,31 +44,32 @@ Blockmodel &asynchronous_gibbs(Blockmodel &blockmodel, const Graph &graph, bool 
             double start_t = MPI_Wtime();
             const CSR &graph_csr = graph.out_csr();
             const CSR &graph_csc = graph.in_csr();
-            #pragma omp target teams distribute parallel for
-            for (size_t index = 0; index < graph_csr.nedges; ++index) {
-                graph_csr._block_id[index] = blockmodel_gpu.block_assignment(graph_csr.col_indices[index]);
-                graph_csc._block_id[index] = blockmodel_gpu.block_assignment(graph_csc.col_indices[index]);
-                graph_csr._edge_weight[index] = graph_csr.vals[index];
-                graph_csc._edge_weight[index] = graph_csc.vals[index];
-            }
-            #pragma omp target teams distribute parallel for
-            for (size_t vertex = 0; vertex < graph_csr.nrows; ++vertex) {
-                // sort _block_id and _edge_weight for the CSR and CSC for this vertex
-                long *csr_keys = graph_csr._block_id + graph_csr.row_ptrs[vertex];
-                long *csr_values = graph_csr._edge_weight + graph_csr.row_ptrs[vertex];
-                long csr_size = graph_csr.degree(vertex);
-                heap_sort(csr_keys, csr_values, csr_size);
-                long *csc_keys = graph_csc._block_id + graph_csc.row_ptrs[vertex];
-                long *csc_values = graph_csc._edge_weight + graph_csc.row_ptrs[vertex];
-                long csc_size = graph_csc.degree(vertex);
-                heap_sort(csc_keys, csc_values, csc_size);
-            }
-            #pragma omp target teams distribute thread_limit(args.gpu_thread_limit)
-            for (long index = start; index < end; ++index) {
-                long vertex = shuffled_vertices_gpu[index];
-                pcg32 rng(seed + (uint64_t)iteration, (uint64_t)vertex);
-                VertexMoveGPU proposal = propose_gibbs_move(blockmodel_gpu, vertex, graph_csr, graph_csc, rng);
-                moves_gpu[vertex] = proposal;
+            if (args.sparse_entries_ds) {
+                // Refresh the neighbor-block companions: assignments change between batches, and
+                // the sort scrambles each slice relative to col_indices.
+                #pragma omp target teams distribute parallel for
+                for (long vertex = 0; vertex < graph_csr.nrows; ++vertex) {
+                    refresh_neighbor_blocks(vertex, graph_csr, graph_csc, blockmodel_gpu);
+                }
+                // entries_dS is serial per vertex on this path, so the team's threads are handed
+                // one vertex each rather than cooperating on a block loop.
+                #pragma omp target teams distribute parallel for thread_limit(args.gpu_thread_limit)
+                for (long index = start; index < end; ++index) {
+                    long vertex = shuffled_vertices_gpu[index];
+                    pcg32 rng(seed + (uint64_t)iteration, (uint64_t)vertex);
+                    VertexMoveGPU proposal = propose_gibbs_move(blockmodel_gpu, vertex, graph_csr, graph_csc, rng);
+                    moves_gpu[vertex] = proposal;
+                }
+            } else {
+                // entries_dS opens its own parallel region over the B blocks, so one thread per
+                // team enters the loop here.
+                #pragma omp target teams distribute thread_limit(args.gpu_thread_limit)
+                for (long index = start; index < end; ++index) {
+                    long vertex = shuffled_vertices_gpu[index];
+                    pcg32 rng(seed + (uint64_t)iteration, (uint64_t)vertex);
+                    VertexMoveGPU proposal = propose_gibbs_move(blockmodel_gpu, vertex, graph_csr, graph_csc, rng);
+                    moves_gpu[vertex] = proposal;
+                }
             }
             double parallel_t = MPI_Wtime();
             timers::MCMC_parallel_time += parallel_t - start_t;
@@ -214,6 +215,25 @@ void heap_sort(long *keys, long *values, long size) {
             root = child;
         }
     }
+}
+
+void refresh_neighbor_blocks(long vertex, const CSR &graph_csr, const CSR &graph_csc,
+                             const BlockmodelGPUView &blockmodel) {
+    long csr_start = graph_csr.row_ptrs[vertex];
+    long csr_size = graph_csr.degree(vertex);
+    for (long i = csr_start; i < csr_start + csr_size; ++i) {
+        graph_csr._block_id[i] = blockmodel.block_assignment(graph_csr.col_indices[i]);
+        graph_csr._edge_weight[i] = graph_csr.vals[i];
+    }
+    heap_sort(graph_csr._block_id + csr_start, graph_csr._edge_weight + csr_start, csr_size);
+
+    long csc_start = graph_csc.row_ptrs[vertex];
+    long csc_size = graph_csc.degree(vertex);
+    for (long i = csc_start; i < csc_start + csc_size; ++i) {
+        graph_csc._block_id[i] = blockmodel.block_assignment(graph_csc.col_indices[i]);
+        graph_csc._edge_weight[i] = graph_csc.vals[i];
+    }
+    heap_sort(graph_csc._block_id + csc_start, graph_csc._edge_weight + csc_start, csc_size);
 }
 
 VertexMoveGPU propose_gibbs_move(const BlockmodelGPUView &blockmodel, long vertex, const CSR &graph_csr, const CSR &graph_csc, pcg32 &rng) {

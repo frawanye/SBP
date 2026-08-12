@@ -266,6 +266,37 @@ double entries_dS(const BlockmodelGPUView &blockmodel, const CSR &graph_csr, con
     NeighborView in_neighbors = graph_csc.neighbors(proposal.vertex);
     long self_edges = self_edge_weight(out_neighbors, proposal.vertex);
 
+    // The neighbor-block companions are allocated only under --sparse_entries_ds, so their absence
+    // selects the dense sweep over all B blocks. The test is uniform across the wavefront.
+    if (graph_csr._block_id == nullptr) {
+        // walk through affected blockmodel rows and columns, compute the change in entropy for each cell
+        #pragma omp parallel for reduction(+:dS)
+        for (long index = 0; index < blockmodel.num_blocks(); ++index) {
+            long col = index;
+            for (long row : {proposal.current_block, proposal.proposed_block}) {
+                long out_edges = incident_edges(proposal.vertex, out_neighbors, blockmodel, col);
+                long in_edges = incident_edges(proposal.vertex, in_neighbors, blockmodel, row);
+                long change = cell_change(proposal, self_edges, blockmodel, row, col, out_edges, in_edges);
+                auto value = (long) blockmodel.get(row, col);
+                dS += eterm_exact(row, col, value + change) - eterm_exact(row, col, value);
+                assert(!std::isinf(dS));
+                assert(!std::isnan(dS));
+            }
+            long row = index;
+            if (row == proposal.current_block || row == proposal.proposed_block) continue;
+            for (long col : {proposal.current_block, proposal.proposed_block}) {
+                long out_edges = incident_edges(proposal.vertex, out_neighbors, blockmodel, col);
+                long in_edges = incident_edges(proposal.vertex, in_neighbors, blockmodel, row);
+                long change = cell_change(proposal, self_edges, blockmodel, row, col, out_edges, in_edges);
+                auto value = (long) blockmodel.get(row, col);
+                dS += eterm_exact(row, col, value + change) - eterm_exact(row, col, value);
+                assert(!std::isinf(dS));
+                assert(!std::isnan(dS));
+            }
+        }
+        return dS;
+    }
+
     long start_ptr = graph_csr.row_ptrs[proposal.vertex];
     long end_ptr = start_ptr + graph_csr.degree(proposal.vertex);
     long out_weight_current = 0, out_weight_proposed = 0, in_weight_current = 0, in_weight_proposed = 0;
@@ -331,28 +362,9 @@ double entries_dS(const BlockmodelGPUView &blockmodel, const CSR &graph_csr, con
     change = cell_change(proposal, self_edges, blockmodel, proposal.proposed_block, proposal.proposed_block, out_weight_proposed, in_weight_proposed);
     value = (long) blockmodel.get(proposal.proposed_block, proposal.proposed_block);
     dS += eterm_exact(proposal.proposed_block, proposal.proposed_block, value + change) - eterm_exact(proposal.proposed_block, proposal.proposed_block, value);
-    // // walk through affected blockmodel rows and columns, compute the change in entropy for each cell
-    // #pragma omp parallel for reduction(+:dS)
-    // for (long index = 0; index < blockmodel.num_blocks(); ++index) {
-    //     long col = index;
-    //     for (long row : {proposal.current_block, proposal.proposed_block}) {
-    //         long change = cell_change(proposal, self_edges, blockmodel, row, col, out_neighbors, in_neighbors);
-    //         auto value = (long) blockmodel.get(row, col);
-    //         dS += eterm_exact(row, col, value + change) - eterm_exact(row, col, value);
-    //         assert(!std::isinf(dS));
-    //         assert(!std::isnan(dS));
-    //     }
-    //     long row = index;
-    //     if (row == proposal.current_block || row == proposal.proposed_block) continue;
-    //     for (long col : {proposal.current_block, proposal.proposed_block}) {
-    //         long change = cell_change(proposal, self_edges, blockmodel, row, col, out_neighbors, in_neighbors);
-    //         auto value = (long) blockmodel.get(row, col);
-    //         dS += eterm_exact(row, col, value + change) - eterm_exact(row, col, value);
-    //         assert(!std::isinf(dS));
-    //         assert(!std::isnan(dS));
-    //     }
-    // }
-    
+    assert(!std::isinf(dS));
+    assert(!std::isnan(dS));
+
     return dS;
 }
 
