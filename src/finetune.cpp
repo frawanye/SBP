@@ -47,6 +47,14 @@ Blockmodel &asynchronous_gibbs(Blockmodel &blockmodel, const Graph &graph, bool 
     if (!args.ordered) {
         shuffled_vertices = utils::range<long>(0, graph.num_vertices());
     }
+    // Block assignment used to re-create the Blockmodel after each batch to improve mixing time of
+    // asynchronous Gibbs sampling. Kept alive across iterations so that the per-vertex edge lists retain
+    // their capacity: re-creating it per batch dominated runtime in freeing the O(V) nested vectors.
+    // Note #2: static is used to avoid re-allocation of the vector across iterations. This may break in some
+    // compilers because it is passed into #pragma omp parallel for as a shared variable. In that case, either
+    // pull it out into the sbp() function or use a static buffer + a local std::vector<VectorMove_v3> &moves
+    // reference.
+    static std::vector<VertexMove_v3> moves(graph.num_vertices());
     for (long iteration = 0; iteration < MAX_NUM_ITERATIONS; ++iteration) {
         if (!args.ordered) {
             unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
@@ -58,9 +66,11 @@ Blockmodel &asynchronous_gibbs(Blockmodel &blockmodel, const Graph &graph, bool 
         for (long batch = 0; batch < graph.num_vertices() / batch_size; ++batch) {
             long start = batch * batch_size;
             long end = std::min(graph.num_vertices(), (batch + 1) * batch_size);
-            // Block assignment used to re-create the Blockmodel after each batch to improve mixing time of
-            // asynchronous Gibbs sampling
-            std::vector<VertexMove_v3> moves(graph.num_vertices());
+            // Only did_move is reset; the edge lists are left intact because a move is applied solely when
+            // moves[vertex] has been overwritten this batch.
+            for (VertexMove_v3 &move : moves) {
+                move.did_move = false;
+            }
             double start_t = MPI_Wtime();
             #pragma omp parallel for schedule(dynamic) default(none) \
             shared(start, end, blockmodel, graph, _vertex_moves, moves, args, shuffled_vertices)
