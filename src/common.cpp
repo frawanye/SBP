@@ -304,19 +304,23 @@ ProposedMove propose_new_block(long vertex, long current_block, const CSR &graph
        return ProposedMove{vertex, current_block, proposal, k_out, k_in, k};
     //    return utils::ProposalAndEdgeCounts{proposal, k_out, k_in, k};
     }
+    // Choose a neighbor vertex
     long neighbor = choose_neighbor(vertex, k, out_neighbors, in_neighbors, rng);
+    // Get the block of the neighbor vertex
     long neighbor_block = blockmodel.block_assignment(neighbor);
 
-    long dense_total = 0;
-    #pragma omp parallel for reduction(+:dense_total)
-    for (size_t i = 0; i < num_blocks; ++i) {
-        dense_total += get_weight(neighbor_block, i, blockmodel);
-    }
-    if (dense_total == 0) { // Neighbor block has no usable neighbors, so propose a random block
+    long dense_total = blockmodel.degrees(neighbor_block);
+    // long dense_total = 0;
+    // #pragma omp parallel for reduction(+:dense_total)
+    // for (size_t i = 0; i < num_blocks; ++i) {
+        // dense_total += get_weight(neighbor_block, i, blockmodel);
+    // }
+    if (dense_total == 0) { // Neighbor's block has no usable neighbors, so propose a random block
         long proposal = propose_random_block(current_block, num_blocks, rng);
         return ProposedMove{vertex, current_block, proposal, k_out, k_in, k};
         // return utils::ProposalAndEdgeCounts{proposal, k_out, k_in, k};
     }
+    // Choose a second-degree neighbor block as the proposal
     long proposal = choose_neighbor(neighbor_block, blockmodel, dense_total, rng);
     return ProposedMove{vertex, current_block, proposal, k_out, k_in, k};
     // return utils::ProposalAndEdgeCounts{proposal, k_out, k_in, k};
