@@ -47,6 +47,14 @@ Blockmodel &asynchronous_gibbs(Blockmodel &blockmodel, const Graph &graph, bool 
     if (!args.ordered) {
         shuffled_vertices = utils::range<long>(0, graph.num_vertices());
     }
+    // Block assignment used to re-create the Blockmodel after each batch to improve mixing time of
+    // asynchronous Gibbs sampling. Kept alive across iterations so that the per-vertex edge lists retain
+    // their capacity: re-creating it per batch dominated runtime in freeing the O(V) nested vectors.
+    // Note #2: static is used to avoid re-allocation of the vector across iterations. This may break in some
+    // compilers because it is passed into #pragma omp parallel for as a shared variable. In that case, either
+    // pull it out into the sbp() function or use a static buffer + a local std::vector<VectorMove_v3> &moves
+    // reference.
+    static std::vector<VertexMove_v3> moves(graph.num_vertices());
     for (long iteration = 0; iteration < MAX_NUM_ITERATIONS; ++iteration) {
         if (!args.ordered) {
             unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
@@ -58,9 +66,11 @@ Blockmodel &asynchronous_gibbs(Blockmodel &blockmodel, const Graph &graph, bool 
         for (long batch = 0; batch < graph.num_vertices() / batch_size; ++batch) {
             long start = batch * batch_size;
             long end = std::min(graph.num_vertices(), (batch + 1) * batch_size);
-            // Block assignment used to re-create the Blockmodel after each batch to improve mixing time of
-            // asynchronous Gibbs sampling
-            std::vector<VertexMove_v3> moves(graph.num_vertices());
+            // Only did_move is reset; the edge lists are left intact because a move is applied solely when
+            // moves[vertex] has been overwritten this batch.
+            for (VertexMove_v3 &move : moves) {
+                move.did_move = false;
+            }
             double start_t = MPI_Wtime();
             #pragma omp parallel for schedule(dynamic) default(none) \
             shared(start, end, blockmodel, graph, _vertex_moves, moves, args, shuffled_vertices)
@@ -70,9 +80,6 @@ Blockmodel &asynchronous_gibbs(Blockmodel &blockmodel, const Graph &graph, bool 
                     vertex = shuffled_vertices[index];
                 }
                 VertexMove_v3 proposal = propose_gibbs_move_v3(blockmodel, vertex, graph);
-                if (proposal.did_move) {
-                    _vertex_moves++;
-                }
                 moves[vertex] = proposal;
             }
             double parallel_t = MPI_Wtime();
@@ -469,12 +476,13 @@ Blockmodel &hybrid_mcmc_load_balanced(Blockmodel &blockmodel, const Graph &graph
         long total_vertex_moves = 0;
         blockmodel.setOverall_entropy(entropy::mdl(blockmodel, graph));
         double initial_entropy = blockmodel.getOverall_entropy();
+        double last_entropy = initial_entropy;
         double num_batches = args.batches;
         long num_low_degree_vertices = long(graph.low_degree_vertices().size());
         long batch_size = long(ceil(num_low_degree_vertices / num_batches));
         std::vector<unsigned long> thread_degrees(omp_get_max_threads());
+        static std::vector<VertexMove_v3> moves(graph.num_vertices());
 //        std::vector<std::pair<long,long>> vertex_properties = sort_vertices_by_degree(graph);
-
         for (long iteration = 0; iteration < MAX_NUM_ITERATIONS; ++iteration) {
 //            std::vector<std::pair<long,long>> block_neighbors = sort_vertices_by_degree(graph);
             for (long i = 0; i < omp_get_max_threads(); ++i) {
@@ -482,13 +490,11 @@ Blockmodel &hybrid_mcmc_load_balanced(Blockmodel &blockmodel, const Graph &graph
             }
             num_surrounded = 0;
             long vertex_moves = 0;
-            double delta_entropy = 0.0;
             double start_t = MPI_Wtime();
             for (long vertex : graph.high_degree_vertices()) {  // Only run Metropolis-Hastings on high-degree vertices
                 VertexMove proposal = propose_move(blockmodel, vertex, graph);
                 if (proposal.did_move) {
                     vertex_moves++;
-                    delta_entropy += proposal.delta_entropy;
                 }
             }
             double sequential_t = MPI_Wtime();
@@ -498,13 +504,17 @@ Blockmodel &hybrid_mcmc_load_balanced(Blockmodel &blockmodel, const Graph &graph
             for (long batch = 0; batch < num_low_degree_vertices / batch_size; ++batch) {
                 long start = batch * batch_size;
                 long end = std::min(num_low_degree_vertices, (batch + 1) * batch_size);
+                // Only did_move is reset; the edge lists are left intact because a move is applied solely when
+                // moves[vertex] has been overwritten this batch.
+                for (VertexMove_v3 &move : moves) {
+                    move.did_move = false;
+                }
                 // Block assignment used to re-create the Blockmodel after each batch to improve mixing time of
                 // asynchronous Gibbs sampling
                 std::vector<long> block_assignment(blockmodel.block_assignment());
-                std::vector<VertexMove_v3> moves(graph.num_vertices());
 //                omp_set_dynamic(0);
                 start_t = MPI_Wtime();
-                #pragma omp parallel default(none) shared(start, end, blockmodel, graph, vertex_moves, delta_entropy, block_assignment, moves, thread_degrees, block_neighbors, std::cout)
+                #pragma omp parallel default(none) shared(start, end, blockmodel, graph, block_assignment, moves, thread_degrees, block_neighbors, std::cout)
                 {
                     long thread_id = omp_get_thread_num();
                     if (thread_id == 0)
@@ -524,9 +534,6 @@ Blockmodel &hybrid_mcmc_load_balanced(Blockmodel &blockmodel, const Graph &graph
                         thread_degrees[thread_id] += num_neighbors;
                         VertexMove_v3 proposal = propose_gibbs_move_v3(blockmodel, vertex, graph);
                         if (proposal.did_move) {
-                            #pragma omp atomic
-                            vertex_moves++;
-                            delta_entropy += proposal.delta_entropy;
                             block_assignment[vertex] = proposal.proposed_block;
                         }
                         moves[vertex] = proposal;
@@ -537,12 +544,18 @@ Blockmodel &hybrid_mcmc_load_balanced(Blockmodel &blockmodel, const Graph &graph
                 double parallel_t = MPI_Wtime();
                 timers::MCMC_parallel_time += parallel_t - start_t;
                 for (const VertexMove_v3 &move : moves) {
-                    if (!move.did_move) continue;
-                    blockmodel.move_vertex(move);
+                    if (!move.did_move)
+                        continue;
+                    if (blockmodel.move_vertex(move)) {
+                        vertex_moves++;
+                    }
                 }
                 timers::MCMC_vertex_move_time += MPI_Wtime() - parallel_t;
             }
+            double entropy = entropy::mdl(blockmodel, graph);
+            double delta_entropy = entropy - last_entropy;
             delta_entropies.push_back(delta_entropy);
+            last_entropy = entropy;
             std::cout << "Itr: " << iteration << ", number of vertex moves: " << vertex_moves << ", delta S: ";
             std::cout << delta_entropy / initial_entropy << ", num surrounded vertices: " << num_surrounded << std::endl;
             total_vertex_moves += vertex_moves;
@@ -575,6 +588,7 @@ Blockmodel &hybrid_mcmc(Blockmodel &blockmodel, const Graph &graph, bool golden_
     long batch_size = long(ceil(num_low_degree_vertices / num_batches));
     std::vector<long> hdv = graph.high_degree_vertices();
     std::vector<long> ldv = graph.low_degree_vertices();
+    static std::vector<VertexMove_v3> moves(graph.num_vertices());
     for (long iteration = 0; iteration < MAX_NUM_ITERATIONS; ++iteration) {
 //        std::cout << "thread_limit: " << omp_get_max_threads() << std::endl;
         num_surrounded = 0;
@@ -598,18 +612,18 @@ Blockmodel &hybrid_mcmc(Blockmodel &blockmodel, const Graph &graph, bool golden_
             start_t = MPI_Wtime();
             long start = batch * batch_size;
             long end = std::min(num_low_degree_vertices, (batch + 1) * batch_size);
+            // Only did_move is reset; the edge lists are left intact because a move is applied solely when
+            // moves[vertex] has been overwritten this batch.
+            for (VertexMove_v3 &move : moves) {
+                move.did_move = false;
+            }
             // Block assignment used to re-create the Blockmodel after each batch to improve mixing time of
             // asynchronous Gibbs sampling
-            std::vector<VertexMove_v3> moves(graph.num_vertices());
             #pragma omp parallel for schedule(dynamic) default(none) \
             shared(start, end, blockmodel, graph, _vertex_moves, moves, ldv)
             for (long index = start; index < end; ++index) {
                 long vertex = ldv[index];
                 VertexMove_v3 proposal = propose_gibbs_move_v3(blockmodel, vertex, graph);
-                if (proposal.did_move) {
-                    #pragma omp atomic
-                    _vertex_moves++;
-                }
                 moves[vertex] = proposal;
             }
             double parallel_t = MPI_Wtime();
