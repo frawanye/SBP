@@ -16,7 +16,7 @@ void init_fastlog(size_t x) {
         if (x >= fastlog_cache.size()) {
             fastlog_cache.resize(x + 1);
             for (size_t i = 0; i < fastlog_cache.size(); ++i) {
-                fastlog_cache[i] = logf(double(i));
+                fastlog_cache[i] = log(double(i));
             }
         }
     }
