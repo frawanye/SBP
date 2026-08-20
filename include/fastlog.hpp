@@ -24,7 +24,7 @@ inline double fastlog(size_t x) {
         init_fastlog(args.cachesize);
     }
     if (x >= fastlog_cache.size()) {
-        return logf(double(x));
+        return log(double(x));
     }
     return fastlog_cache[x];
 }
